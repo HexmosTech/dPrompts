@@ -54,6 +54,22 @@ dpr --mode=client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type"
   ollama pull gemma2:2b
   ```
 
+- **List available models:**
+  ```sh
+  ollama list
+  ```
+
+- **Test if Ollama is running:**
+  ```sh
+  curl http://localhost:11434/api/chat -d '{
+    "model": "gemma2:2b",
+    "messages": [
+      { "role": "user", "content": "Why is the sky blue?" }
+    ],
+    "stream": false
+  }'
+  ```
+
 - **Stop Ollama server (Ctrl+C if running in foreground):**
   Press `Ctrl+C` in the terminal running `ollama serve`.
 
