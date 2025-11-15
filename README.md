@@ -4,16 +4,23 @@
 
 dPrompt is a distributed job processing system using River and PostgreSQL, with support for LLM (Ollama) integration.
 
-## Setup
+## Installation
 
-1. **Build the binary:**
+1. **Run the installer script:**
    ```sh
-   make build
+   curl -fsSL https://raw.githubusercontent.com/HexmosTech/dPrompts/main/install.sh | bash
    ```
+
+   This will:
+   - Download and install the latest `dpr` binary to `/usr/local/bin`
+   - Copy `.dprompts.toml` to your home directory (if present in the current directory)
+   - Check/install Ollama and the required model
+   - Start the Ollama server if not already running
 
 2. **Configuration:**
    - Place your configuration file as `.dprompts.toml` in your home directory (`$HOME/.dprompts.toml`).
-   
+
+
 ## Usage
 
 ### Run a Worker
@@ -23,7 +30,7 @@ make worker
 ```
 or
 ```sh
-./dprompts --mode=worker
+dpr --mode=worker
 ```
 
 ### Enqueue a Job (Client Mode)
@@ -33,7 +40,7 @@ make client
 ```
 or manually:
 ```sh
-./dprompts --mode=client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type":"manpage","category":"science"}'
+dpr --mode=client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type":"manpage","category":"science"}'
 ```
 
 ## Notes
