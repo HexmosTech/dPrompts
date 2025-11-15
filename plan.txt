@@ -1,0 +1,3 @@
+Input Json-> PSQL -> Ollama -> Output Json -> PSQL
+
+configure review queue and fetching
