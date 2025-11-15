@@ -15,7 +15,8 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	mode := flag.String("mode", "worker", "Mode: 'client' to enqueue a job, 'worker' to run worker")
-	message := flag.String("message", "", "Job message (for client mode)")
+	argsJSON := flag.String("args", "", "Job args as JSON (for client mode)")
+	metadataJSON := flag.String("metadata", "", "Job metadata as JSON (for client mode)")
 	configPath := flag.String("config", "", "Path to config file (default: $HOME/.dprompt.toml)")
 
 	flag.Parse()
@@ -34,9 +35,9 @@ func main() {
 
 	switch *mode {
 	case "client":
-		RunClient(ctx, driver, *message)
+		RunClient(ctx, driver, *argsJSON, *metadataJSON)
 	case "worker":
-		RunWorker(ctx, driver, cancel)
+		RunWorker(ctx, driver, cancel, dbPool)
 	default:
 		log.Fatal().Str("mode", *mode).Msg("Unknown mode")
 	}

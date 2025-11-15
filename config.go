@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// LoadDBConfig reads the TOML file and returns the database config
+
 func LoadDBConfig(path string) (*DBConfig, error) {
 	var conf struct {
 		Database DBConfig
@@ -23,7 +23,7 @@ func LoadDBConfig(path string) (*DBConfig, error) {
 	return &conf.Database, nil
 }
 
-// NewDBPool creates a new database connection pool from the config
+
 func NewDBPool(ctx context.Context, configPath string) (*pgxpool.Pool, error) {
 
 	if configPath == "" {

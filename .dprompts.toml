@@ -1,0 +1,13 @@
+[database]
+engine = "postgresql"
+name = "dprompts"
+user = "psql-username"
+password = "psql-password"
+host = "111-xxxx-xxxx"
+port = "5432"
+
+[llm]
+api-endpoint = "http://localhost:11434/api/chat"
+model = "gemma2:2b"
+temperature = 0.7
+topP = 0.9

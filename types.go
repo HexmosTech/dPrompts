@@ -1,6 +1,5 @@
 package main
 
-// DBConfig holds the database connection details
 type DBConfig struct {
 	Engine   string
 	Name     string
@@ -10,12 +9,29 @@ type DBConfig struct {
 	Port     string
 }
 
-// DPromptsJobArgs holds the data for our job
 type DPromptsJobArgs struct {
+	Prompt  string `json:"prompt"`
 	Message string `json:"message"`
 }
 
-// Kind returns the job's type. This MUST match the key in RegisterWorkers
+type DPromptsJobResult struct {
+	Response string `json:"response"`
+}
+
 func (DPromptsJobArgs) Kind() string {
 	return "dprompts-worker"
+}
+
+type LLMConfig struct {
+	APIEndpoint string  `toml:"api-endpoint"`
+	Model       string  `toml:"model"`
+	Temperature float64 `toml:"temperature"`
+	TopP        float64 `toml:"topP"`
+}
+
+type OllamaResponse struct {
+	Message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"message"`
 }
