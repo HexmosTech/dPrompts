@@ -20,7 +20,6 @@ dPrompt is a distributed job processing system using River and PostgreSQL, with 
 2. **Configuration:**
    - Place your configuration file as `.dprompts.toml` in your home directory (`$HOME/.dprompts.toml`).
 
-
 ## Usage
 
 ### Run a Worker
@@ -42,6 +41,26 @@ or manually:
 ```sh
 dpr --mode=client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type":"manpage","category":"science"}'
 ```
+
+## Useful Ollama Commands
+
+- **Run Ollama server:**
+  ```sh
+  ollama serve
+  ```
+
+- **Pull a model:**
+  ```sh
+  ollama pull gemma2:2b
+  ```
+
+- **Stop Ollama server (Ctrl+C if running in foreground):**
+  Press `Ctrl+C` in the terminal running `ollama serve`.
+
+- **Kill Ollama server running in background:**
+  ```sh
+  pkill ollama
+  ```
 
 ## Notes
 
