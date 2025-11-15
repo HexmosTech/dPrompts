@@ -24,9 +24,9 @@ jobs:
         run: |
           go build -o dpr .
 
-      - name: Upload Release Asset
-        env:: softprops/action-gh-release@v2
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
           files: dpr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
