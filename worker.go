@@ -26,7 +26,6 @@ func (w *DPromptsWorker) Timeout(job *river.Job[DPromptsJobArgs]) time.Duration 
 	return 5 * time.Minute
 }
 
-
 func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
 	log.Info().
 		Str("job_id", strconv.FormatInt(job.ID, 10)).
@@ -40,8 +39,7 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	}
 	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
 
-	
-	response, err := CallOllama(job.Args.Message, configPath)
+	response, err := CallOllama(job.Args.Prompt, configPath)
 	if err != nil {
 		log.Error().Err(err).Msg("Ollama call failed")
 		return err
@@ -50,7 +48,6 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 		Str("job_id", strconv.FormatInt(job.ID, 10)).
 		Msg("Ollama call successful, saving to DB")
 
-	
 	jsonResponse, err := json.Marshal(map[string]string{"response": response})
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to marshal response as JSON")
@@ -67,7 +64,6 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 		return err
 	}
 
-	
 	log.Info().
 		Str("job_id", strconv.FormatInt(job.ID, 10)).
 		Msg("Job completed and saved")
