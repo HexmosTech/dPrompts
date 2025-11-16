@@ -17,6 +17,7 @@ func main() {
 	mode := flag.String("mode", "worker", "Mode: 'client' to enqueue a job, 'worker' to run worker")
 	argsJSON := flag.String("args", "", "Job args as JSON (for client mode)")
 	metadataJSON := flag.String("metadata", "", "Job metadata as JSON (for client mode)")
+	bulkFile := flag.String("bulk-from-file", "", "Bulk insert jobs from JSON file")
 	configPath := flag.String("config", "", "Path to config file (default: $HOME/.dprompt.toml)")
 
 	flag.Parse()
@@ -35,7 +36,7 @@ func main() {
 
 	switch *mode {
 	case "client":
-		RunClient(ctx, driver, *argsJSON, *metadataJSON)
+		RunClient(ctx, driver, *argsJSON, *metadataJSON, *bulkFile, dbPool)
 	case "worker":
 		RunWorker(ctx, driver, cancel, dbPool)
 	default:
