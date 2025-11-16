@@ -54,13 +54,30 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 		return err
 	}
 
-	_, err = w.db.Exec(ctx,
-		"INSERT INTO dprompts_results (job_id, response) VALUES ($1, $2)",
+	tx, err := w.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx,
+		"INSERT INTO dprompts_results (job_id, response) VALUES ($1, $2) ON CONFLICT (job_id) DO NOTHING",
 		job.ID,
 		jsonResponse,
 	)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to store Ollama result in database")
+		return err
+	}
+
+	_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to complete job transactionally")
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to commit transaction")
 		return err
 	}
 

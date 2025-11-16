@@ -1,8 +1,8 @@
-# dPrompt
+# dPrompts
 
 ## Overview
 
-dPrompt is a distributed job processing system using River and PostgreSQL, with support for LLM (Ollama) integration.
+dPrompts enables teams to perform distributed, bulk LLM operations locally using Ollama, which is cost-effective and works on most laptops with an integrated GPU.
 
 ## Installation
 
