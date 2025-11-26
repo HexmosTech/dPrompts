@@ -98,7 +98,8 @@ func createWorkerClient(driver *riverpgxv5.Driver, workers *river.Workers) (*riv
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 10},
 		},
-		Workers: workers,
+		Workers:                     workers,
+		CompletedJobRetentionPeriod: 72 * time.Hour,
 	})
 }
 
