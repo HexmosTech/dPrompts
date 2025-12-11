@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/jackc/pgx/v5"
@@ -17,7 +18,35 @@ type BulkJob struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// RunClient enqueues a job with args and metadata as JSON strings.
+
+func LoadSchemas(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &schemas)
+}
+
+func resolveSchema(args *DPromptsJobArgs) error {
+	// If inline schema exists, user overrides
+	if args.Schema != nil {
+		args.SchemaName = "" // cleanup
+		return nil
+	}
+
+	// Schema name shortcut
+	if args.SchemaName != "" {
+		schema, ok := schemas[args.SchemaName]
+		if !ok {
+			return fmt.Errorf("schema '%s' not found in schemas.json", args.SchemaName)
+		}
+		args.Schema = schema
+		args.SchemaName = "" // remove shortcut before sending to worker
+	}
+
+	return nil
+}
+
 func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, metadataJSON string, bulkFile string, dbPool *pgxpool.Pool) {
 	riverClient, err := newRiverClient(driver)
 	if err != nil {
@@ -40,6 +69,12 @@ func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, 
 		log.Fatal().Err(err).Msg("Failed to parse args JSON")
 	}
 
+	// resolve schema shortcuts / inline
+	if err := resolveSchema(&args); err != nil {
+		log.Fatal().Err(err).Msg("Schema resolution failed")
+	}
+
+	// Metadata
 	var insertOpts *river.InsertOpts
 	if metadataJSON != "" {
 		var metadata map[string]interface{}
@@ -58,7 +93,11 @@ func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, 
 	if _, err := riverClient.Insert(ctx, &args, insertOpts); err != nil {
 		log.Fatal().Err(err).Msg("Failed to enqueue job")
 	}
-	log.Info().Interface("args", args).Interface("metadata", insertOpts).Msg("Enqueued job")
+
+	log.Info().
+		Interface("args", args).
+		Interface("metadata", insertOpts).
+		Msg("Enqueued job")
 }
 
 func enqueueBulkJobsFromFile(ctx context.Context, riverClient *river.Client[pgx.Tx], dbPool *pgxpool.Pool, filename string) error {
@@ -80,17 +119,22 @@ func enqueueBulkJobsFromFile(ctx context.Context, riverClient *river.Client[pgx.
 	defer tx.Rollback(ctx)
 
 	var jobsToInsert []river.InsertManyParams
-	for _, job := range jobs {
+
+	for i := range jobs {
+		if err := resolveSchema(&jobs[i].Args); err != nil {
+			return fmt.Errorf("job %d schema resolution failed: %w", i, err)
+		}
+
 		var insertOpts *river.InsertOpts
-		if job.Metadata != nil {
-			metadataBytes, err := json.Marshal(job.Metadata)
+		if jobs[i].Metadata != nil {
+			metadataBytes, err := json.Marshal(jobs[i].Metadata)
 			if err != nil {
 				return err
 			}
 			insertOpts = &river.InsertOpts{Metadata: metadataBytes}
 		}
 		jobsToInsert = append(jobsToInsert, river.InsertManyParams{
-			Args:       job.Args,
+			Args:       jobs[i].Args,
 			InsertOpts: insertOpts,
 		})
 	}

@@ -12,6 +12,8 @@ type DBConfig struct {
 type DPromptsJobArgs struct {
 	Prompt  string `json:"prompt"`
 	Message string `json:"message"`
+	Schema     interface{} `json:"schema,omitempty"`      // expanded schema object
+    SchemaName string      `json:"schema_name,omitempty"` // shortcut name (client only)
 }
 
 type DPromptsJobResult struct {
