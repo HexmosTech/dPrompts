@@ -42,6 +42,39 @@ or manually:
 dpr --mode=client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type":"manpage","category":"science"}'
 ```
 
+### Bulk Enqueue Jobs
+
+To enqueue multiple jobs at once from a JSON file:
+
+```sh
+dpr --mode=client --bulk-from-file=queue_items.json
+```
+
+The JSON file should be an array of job objects:
+
+```json
+[
+  {
+    "args": {
+      "prompt": "Why is the sky blue?"
+    },
+    "metadata": {
+      "type": "test",
+      "category": "science"
+    }
+  },
+  {
+    "args": {
+      "prompt": "What is the capital of France?"
+    },
+    "metadata": {
+      "type": "test",
+      "category": "geography"
+    }
+  }
+]
+```
+
 ## Useful Ollama Commands
 
 - **Run Ollama server:**

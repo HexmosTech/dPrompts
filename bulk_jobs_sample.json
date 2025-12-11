@@ -1,0 +1,22 @@
+[
+  {
+    "args": {
+      "prompt": "Why is the sky blue?"
+    },
+    "metadata": {
+      "type": "test",
+      "category": "",
+      "filename": ""
+    }
+  },
+  {
+    "args": {
+      "prompt": "What is the capital of France?"
+    },
+    "metadata": {
+      "type": "test",
+      "category": "",
+      "filename": ""
+    }
+  }
+]
