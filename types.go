@@ -9,12 +9,14 @@ type DBConfig struct {
 	Port     string
 }
 
+
 type DPromptsJobArgs struct {
-	Prompt  string `json:"prompt"`
-	Message string `json:"message"`
-	Schema     interface{} `json:"schema,omitempty"`      // expanded schema object
-    SchemaName string      `json:"schema_name,omitempty"` // shortcut name (client only)
+    Prompt     string                 `json:"prompt"`
+    Schema     interface{}            `json:"schema,omitempty"`
+    SchemaName string                 `json:"schema_name,omitempty"`
+    GroupID    *int                   `json:"group_id,omitempty"`  // <-- ADD THIS
 }
+
 
 type DPromptsJobResult struct {
 	Response string `json:"response"`

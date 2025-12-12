@@ -9,7 +9,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
-var schemas = map[string]interface{}{} // initialized, avoids nil map crash
 
 func main() {
 
@@ -25,12 +24,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	if err := LoadSchemas("schemas.json"); err != nil {
-        log.Fatal().Err(err).Msg("Failed to load schemas.json")
-    }
-	
-    log.Info().Msg("Schemas loaded successfully.")
 
 	dbPool, err := NewDBPool(ctx, *configPath)
 	if err != nil {

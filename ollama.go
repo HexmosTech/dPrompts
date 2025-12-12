@@ -25,26 +25,37 @@ func LoadLLMConfig(configPath string) (*LLMConfig, error) {
 	return &conf.LLM, nil
 }
 
-func CallOllama(prompt string, configPath string) (string, error) {
+func CallOllama(prompt string, schema interface{}, configPath string) (string, error) {
 	llmConfig, err := LoadLLMConfig(configPath)
 	if err != nil {
 		return "", err
 	}
 
-	reqBody, err := json.Marshal(map[string]interface{}{
-		"model":    llmConfig.Model,
-		"messages": []map[string]string{{"role": "user", "content": prompt}},
-		"stream":   false,
-		"format":   "json",
+	// Build request body
+	req := map[string]interface{}{
+		"model":  llmConfig.Model,
+		"stream": false,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
 		"options": map[string]float64{
 			"temperature": llmConfig.Temperature,
 			"top_p":       llmConfig.TopP,
-			"num_predict": 100,
 		},
-	})
+	}
+
+	// ⬇️ Only include schema if provided
+	if schema != nil {
+		req["format"] = schema
+	} else {
+		req["format"] = "json" // default JSON output
+	}
+
+	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return "", err
 	}
+
 
 	client := &http.Client{Timeout: 360 * time.Second}
 	endpoint := llmConfig.APIEndpoint
