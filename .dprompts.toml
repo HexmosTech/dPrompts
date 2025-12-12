@@ -1,9 +1,9 @@
 [database]
 engine = "postgresql"
 name = "dprompts"
-user = "rtp"
-password = "password"
-host = "localhost"
+user = "psql-username"
+password = "psql-password"
+host = "111-xxxx-xxxx"
 port = "5432"
 
 [llm]
