@@ -27,10 +27,12 @@ func (w *DPromptsWorker) Timeout(job *river.Job[DPromptsJobArgs]) time.Duration 
 }
 
 func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
+	jobID := strconv.FormatInt(job.ID, 10)
 	log.Info().
 		Str("job_id", strconv.FormatInt(job.ID, 10)).
 		Interface("args", job.Args).
 		Msg("Processing job")
+
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -39,7 +41,8 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	}
 	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
 
-	response, err := CallOllama(job.Args.Prompt, configPath)
+	// Call Ollama
+	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath)
 	if err != nil {
 		log.Error().Err(err).Msg("Ollama call failed")
 		return err
@@ -47,7 +50,7 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	log.Info().
 		Str("job_id", strconv.FormatInt(job.ID, 10)).
 		Msg("Ollama call successful, saving to DB")
-
+	
 	jsonResponse, err := json.Marshal(map[string]string{"response": response})
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to marshal response as JSON")
@@ -60,15 +63,17 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx,
-		"INSERT INTO dprompts_results (job_id, response) VALUES ($1, $2) ON CONFLICT (job_id) DO NOTHING",
-		job.ID,
-		jsonResponse,
-	)
+	// Get Group ID if it exists
+	groupID, err := w.resolveGroup(ctx, tx, jobID, job.Args.GroupName)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to store Ollama result in database")
 		return err
 	}
+	
+	// Insert the results
+	if err := w.insertResult(ctx, tx, job.ID, jsonResponse, groupID); err != nil {
+		return err
+	}
+	
 
 	_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
 	if err != nil {
@@ -131,3 +136,58 @@ func RunWorker(ctx context.Context, driver *riverpgxv5.Driver, cancel context.Ca
 	<-ctx.Done()
 	log.Info().Msg("Worker shut down.")
 }
+
+// resolveGroup ensures the group exists and returns its ID (or nil if no group)
+func (w *DPromptsWorker) resolveGroup(ctx context.Context, tx pgx.Tx, jobID string, groupName string) (*int, error) {
+	if groupName == "" {
+		log.Info().Str("job_id", jobID).Msg("No group name provided, skipping group creation")
+		return nil, nil
+	}
+
+	var id int
+	err := tx.QueryRow(ctx, `
+		INSERT INTO dprompt_groups (group_name)
+		VALUES ($1)
+		ON CONFLICT (group_name) DO NOTHING
+		RETURNING id
+	`, groupName).Scan(&id)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Group already exists, fetch its ID
+			err = tx.QueryRow(ctx, `SELECT id FROM dprompt_groups WHERE group_name = $1`, groupName).Scan(&id)
+			if err != nil {
+				log.Error().Err(err).Str("job_id", jobID).Str("group_name", groupName).Msg("Failed to fetch existing group id")
+				return nil, err
+			}
+		} else {
+			log.Error().Err(err).Str("job_id", jobID).Str("group_name", groupName).Msg("Failed to create group")
+			return nil, err
+		}
+	}
+
+	log.Info().Str("job_id", jobID).Int("group_id", id).Msg("Resolved group")
+	return &id, nil
+}
+
+
+// insertResult inserts or updates a dprompt result for a job
+func (w *DPromptsWorker) insertResult(ctx context.Context, tx pgx.Tx, jobID int64, jsonResponse []byte, groupID *int) error {
+	_, err := tx.Exec(ctx,
+		`INSERT INTO dprompts_results (job_id, response, group_id)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (job_id)
+		 DO UPDATE SET response = EXCLUDED.response,
+					   group_id = EXCLUDED.group_id`,
+		jobID,
+		jsonResponse,
+		groupID, // nil = NULL if no group
+	)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to store Ollama result in database")
+		return err
+	}
+	return nil
+}
+
+

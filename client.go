@@ -40,6 +40,7 @@ func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, 
 		log.Fatal().Err(err).Msg("Failed to parse args JSON")
 	}
 
+
 	var insertOpts *river.InsertOpts
 	if metadataJSON != "" {
 		var metadata map[string]interface{}
@@ -58,7 +59,11 @@ func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, 
 	if _, err := riverClient.Insert(ctx, &args, insertOpts); err != nil {
 		log.Fatal().Err(err).Msg("Failed to enqueue job")
 	}
-	log.Info().Interface("args", args).Interface("metadata", insertOpts).Msg("Enqueued job")
+
+	log.Info().
+		Interface("args", args).
+		Interface("metadata", insertOpts).
+		Msg("Enqueued job")
 }
 
 func enqueueBulkJobsFromFile(ctx context.Context, riverClient *river.Client[pgx.Tx], dbPool *pgxpool.Pool, filename string) error {
@@ -80,17 +85,19 @@ func enqueueBulkJobsFromFile(ctx context.Context, riverClient *river.Client[pgx.
 	defer tx.Rollback(ctx)
 
 	var jobsToInsert []river.InsertManyParams
-	for _, job := range jobs {
+
+	for i := range jobs {
+
 		var insertOpts *river.InsertOpts
-		if job.Metadata != nil {
-			metadataBytes, err := json.Marshal(job.Metadata)
+		if jobs[i].Metadata != nil {
+			metadataBytes, err := json.Marshal(jobs[i].Metadata)
 			if err != nil {
 				return err
 			}
 			insertOpts = &river.InsertOpts{Metadata: metadataBytes}
 		}
 		jobsToInsert = append(jobsToInsert, river.InsertManyParams{
-			Args:       job.Args,
+			Args:       jobs[i].Args,
 			InsertOpts: insertOpts,
 		})
 	}

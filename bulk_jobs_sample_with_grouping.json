@@ -1,0 +1,47 @@
+[
+    {
+      "args": {
+        "prompt": "Explain the difference between TCP and UDP.",
+        "group_name": "networking_basics"
+      },
+      "metadata": {
+        "type": "test",
+        "category": "networking",
+        "filename": "tcp_udp.md"
+      }
+    },
+    {
+      "args": {
+        "prompt": "What is a subnet mask and why is it important?",
+        "group_name": "networking_basics"
+      },
+      "metadata": {
+        "type": "test",
+        "category": "networking",
+        "filename": "subnet_mask.md"
+      }
+    },
+    {
+      "args": {
+        "prompt": "How do you reverse a linked list in Python?",
+        "group_name": "python_algorithms"
+      },
+      "metadata": {
+        "type": "test",
+        "category": "python",
+        "filename": "reverse_linked_list.md"
+      }
+    },
+    {
+      "args": {
+        "prompt": "Explain Python's list comprehension with examples.",
+        "group_name": "python_algorithms"
+      },
+      "metadata": {
+        "type": "test",
+        "category": "python",
+        "filename": "list_comprehension.md"
+      }
+    }
+  ]
+  

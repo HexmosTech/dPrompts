@@ -19,6 +19,15 @@ func main() {
 	metadataJSON := flag.String("metadata", "", "Job metadata as JSON (for client mode)")
 	bulkFile := flag.String("bulk-from-file", "", "Bulk insert jobs from JSON file")
 	configPath := flag.String("config", "", "Path to config file (default: $HOME/.dprompt.toml)")
+	
+	totalGroups := flag.Bool("total-groups", false, "Display total number of groups (view mode)")
+	groupID := flag.Int("group", 0, "Display results for a specific group ID (view mode)")
+	deleteGroupID := flag.Int("delete-group-id", 0, "Delete a specific group ID and all its associated results")
+
+	n := flag.Int("n", 10, "Number of results to display (view mode)")
+	
+	queueN := flag.Int("queue-n", 10, "Number of queued jobs to display (for view action)")
+	queueAction := flag.String("action", "", "Queue action: 'view' to list queued jobs, 'clear' to delete all queued jobs")
 
 	flag.Parse()
 
@@ -39,6 +48,41 @@ func main() {
 		RunClient(ctx, driver, *argsJSON, *metadataJSON, *bulkFile, dbPool)
 	case "worker":
 		RunWorker(ctx, driver, cancel, dbPool)
+	case "delete-group":
+		if *deleteGroupID == 0 {
+			log.Fatal().Msg("Please provide --delete-group-id")
+		}
+		if err := DeleteGroupAndResults(ctx, dbPool, *deleteGroupID); err != nil {
+			log.Fatal().Err(err).Msg("Failed to delete group and results")
+		}
+		log.Info().Int("group_id", *deleteGroupID).Msg("Deleted group and associated results")
+	case "view":
+		if *totalGroups {
+			if err := viewTotalGroups(ctx, dbPool); err != nil {
+				log.Fatal().Err(err).Msg("Failed to get total groups")
+			}
+		} else if *groupID != 0 {
+			if err := viewResultsByGroup(ctx, dbPool, *groupID); err != nil {
+				log.Fatal().Err(err).Msg("Failed to get results by group")
+			}
+		} else {
+			if err := viewLastResults(ctx, dbPool, *n); err != nil {
+				log.Fatal().Err(err).Msg("Failed to get last results")
+			}
+		}
+	case "queue":
+		switch *queueAction {
+		case "view":
+			if err := ViewQueuedJobs(ctx, dbPool, *queueN); err != nil {
+				log.Fatal().Err(err).Msg("Failed to view queued jobs")
+			}
+		case "clear":
+			if err := ClearQueuedJobs(ctx, dbPool); err != nil {
+				log.Fatal().Err(err).Msg("Failed to clear queued jobs")
+			}
+		default:
+			log.Fatal().Str("action", *queueAction).Msg("Unknown queue action")
+		}
 	default:
 		log.Fatal().Str("mode", *mode).Msg("Unknown mode")
 	}
