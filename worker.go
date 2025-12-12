@@ -30,63 +30,41 @@ func (w *DPromptsWorker) Timeout(job *river.Job[DPromptsJobArgs]) time.Duration 
 func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
 	jobID := strconv.FormatInt(job.ID, 10)
 	log.Info().
-		Str("job_id", jobID).
+		Str("job_id", strconv.FormatInt(job.ID, 10)).
 		Interface("args", job.Args).
-		Msg("Starting job processing")
+		Msg("Processing job")
 
-	// Log DB connection info
-	if w.db != nil {
-		config := w.db.Config()
-		log.Info().
-			Str("job_id", jobID).
-			Str("db_conn_info", fmt.Sprintf("host=%s port=%d user=%s dbname=%s", 
-				config.ConnConfig.Host, config.ConnConfig.Port, config.ConnConfig.User, config.ConnConfig.Database)).
-			Msg("Using DB connection")
-	} else {
-		log.Warn().Str("job_id", jobID).Msg("DB pool is nil")
-	}
 
 	// Get config path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Error().Err(err).Str("job_id", jobID).Msg("Unable to determine home directory for config file")
+		log.Error().Err(err).Msg("Unable to determine home directory for config file")
 		return err
 	}
 	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
-	log.Info().Str("job_id", jobID).Str("configPath", configPath).Msg("Using config path for Ollama")
 
 	// Call Ollama
 	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath)
 	if err != nil {
-		log.Error().Err(err).Str("job_id", jobID).Msg("Ollama call failed")
+		log.Error().Err(err).Msg("Ollama call failed")
 		return err
 	}
-	log.Info().Str("job_id", jobID).Str("response_preview", response).Msg("Ollama call successful")
-
-	// Marshal JSON response
+	log.Info().
+		Str("job_id", strconv.FormatInt(job.ID, 10)).
+		Msg("Ollama call successful, saving to DB")
+	
 	jsonResponse, err := json.Marshal(map[string]string{"response": response})
 	if err != nil {
-		log.Error().Err(err).Str("job_id", jobID).Msg("Failed to marshal response as JSON")
+		log.Error().Err(err).Msg("Failed to marshal response as JSON")
 		return err
 	}
-	log.Debug().Str("job_id", jobID).Str("jsonResponse", string(jsonResponse)).Msg("Marshaled JSON response")
 
-	// Begin transaction
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
-		log.Error().Err(err).Str("job_id", jobID).Msg("Failed to begin DB transaction")
 		return err
 	}
-	log.Info().Str("job_id", jobID).Msg("Transaction started")
-	defer func() {
-		if tx != nil {
-			if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
-				log.Error().Err(err).Str("job_id", jobID).Msg("Failed to rollback transaction")
-			} else {
-				log.Debug().Str("job_id", jobID).Msg("Transaction rolled back (deferred)")
-			}
-		}
-	}()
+	defer tx.Rollback(ctx)
+
 
 	// Create group if needed
 	var groupID *int // nullable
@@ -136,30 +114,26 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	
 	
 	if err != nil {
-		log.Error().Err(err).Str("job_id", jobID).Msg("Failed to insert result into dprompts_results")
+		log.Error().Err(err).Msg("Failed to store Ollama result in database")
 		return err
 	}
-	log.Info().Str("job_id", jobID).Interface("pg_result", res).Msg("Insert executed")
 
-	// Complete job transactionally with River
-	completeRes, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+	_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
 	if err != nil {
-		log.Error().Err(err).Str("job_id", jobID).Msg("Failed to complete job transactionally with River")
+		log.Error().Err(err).Msg("Failed to complete job transactionally")
 		return err
 	}
-	log.Info().Str("job_id", jobID).Interface("completeRes", completeRes).Msg("Job completion executed")
 
-	// Commit transaction
 	if err := tx.Commit(ctx); err != nil {
-		log.Error().Err(err).Str("job_id", jobID).Msg("Failed to commit transaction")
+		log.Error().Err(err).Msg("Failed to commit transaction")
 		return err
 	}
-	log.Info().Str("job_id", jobID).Msg("Transaction committed successfully, job finished")
 
-	tx = nil // prevent deferred rollback
+	log.Info().
+		Str("job_id", strconv.FormatInt(job.ID, 10)).
+		Msg("Job completed and saved")
 	return nil
 }
-
 
 func RegisterWorkers(db *pgxpool.Pool) *river.Workers {
 	workers := river.NewWorkers()

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"os"
 
-
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -20,12 +19,14 @@ func main() {
 	metadataJSON := flag.String("metadata", "", "Job metadata as JSON (for client mode)")
 	bulkFile := flag.String("bulk-from-file", "", "Bulk insert jobs from JSON file")
 	configPath := flag.String("config", "", "Path to config file (default: $HOME/.dprompt.toml)")
+	
 	totalGroups := flag.Bool("total-groups", false, "Display total number of groups (view mode)")
 	groupID := flag.Int("group", 0, "Display results for a specific group ID (view mode)")
-	queueAction := flag.String("action", "", "Queue action: 'view' to list queued jobs, 'clear' to delete all queued jobs")
 	
 	n := flag.Int("n", 10, "Number of results to display (view mode)")
+	
 	queueN := flag.Int("queue-n", 10, "Number of queued jobs to display (for view action)")
+	queueAction := flag.String("action", "", "Queue action: 'view' to list queued jobs, 'clear' to delete all queued jobs")
 
 	flag.Parse()
 

@@ -13,7 +13,6 @@ type DBConfig struct {
 type DPromptsJobArgs struct {
     Prompt     string                 `json:"prompt"`
     Schema     interface{}            `json:"schema,omitempty"`
-    SchemaName string                 `json:"schema_name,omitempty"`
     GroupName string                 `json:"group_name,omitempty"` // optional
 }
 

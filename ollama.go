@@ -56,7 +56,6 @@ func CallOllama(prompt string, schema interface{}, configPath string) (string, e
 		return "", err
 	}
 
-
 	client := &http.Client{Timeout: 360 * time.Second}
 	endpoint := llmConfig.APIEndpoint
 	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(reqBody))

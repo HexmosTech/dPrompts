@@ -17,7 +17,7 @@ type BulkJob struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
-
+// RunClient enqueues a job with args and metadata as JSON strings.
 func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, metadataJSON string, bulkFile string, dbPool *pgxpool.Pool) {
 	riverClient, err := newRiverClient(driver)
 	if err != nil {
@@ -41,7 +41,6 @@ func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, 
 	}
 
 
-	// Metadata
 	var insertOpts *river.InsertOpts
 	if metadataJSON != "" {
 		var metadata map[string]interface{}
