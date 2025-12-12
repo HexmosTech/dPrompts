@@ -88,12 +88,53 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 		}
 	}()
 
+	// Create group if needed
+	var groupID *int // nullable
+
+	if job.Args.GroupName != "" {
+		var id int
+		// Create group if it doesn't exist, otherwise return existing id
+		err = tx.QueryRow(ctx, `
+			INSERT INTO dprompt_groups (group_name)
+			VALUES ($1)
+			ON CONFLICT (group_name) DO NOTHING
+			RETURNING id
+		`, job.Args.GroupName).Scan(&id)
+	
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				// Group already exists, fetch its ID
+				err = tx.QueryRow(ctx, `SELECT id FROM dprompt_groups WHERE group_name = $1`, job.Args.GroupName).Scan(&id)
+				if err != nil {
+					log.Error().Err(err).Str("job_id", jobID).Str("group_name", job.Args.GroupName).Msg("Failed to fetch existing group id")
+					return err
+				}
+			} else {
+				log.Error().Err(err).Str("job_id", jobID).Str("group_name", job.Args.GroupName).Msg("Failed to create group")
+				return err
+			}
+		}
+	
+		groupID = &id
+		log.Info().Str("job_id", jobID).Int("group_id", id).Msg("Resolved group")
+	} else {
+		log.Info().Str("job_id", jobID).Msg("No group name provided, skipping group creation")
+	}
+	
 	// Insert result into dprompts_results
 	res, err := tx.Exec(ctx,
-		"INSERT INTO dprompts_results (job_id, response) VALUES ($1, $2) ON CONFLICT (job_id) DO NOTHING",
+		`INSERT INTO dprompts_results (job_id, response, group_id)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (job_id)
+		 DO UPDATE SET response = EXCLUDED.response,
+					   group_id = EXCLUDED.group_id`,
 		job.ID,
 		jsonResponse,
+		groupID, // nil = NULL if no group
 	)
+	
+	
+	
 	if err != nil {
 		log.Error().Err(err).Str("job_id", jobID).Msg("Failed to insert result into dprompts_results")
 		return err

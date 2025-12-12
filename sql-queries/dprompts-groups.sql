@@ -1,5 +1,5 @@
 CREATE TABLE dprompt_groups (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    group_name TEXT NOT NULL,
+    group_name TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
