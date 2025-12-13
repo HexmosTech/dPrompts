@@ -27,33 +27,34 @@ func (w *DPromptsWorker) Timeout(job *river.Job[DPromptsJobArgs]) time.Duration 
 }
 
 func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
+	start := time.Now()
 	jobID := strconv.FormatInt(job.ID, 10)
-	log.Info().
-		Str("job_id", strconv.FormatInt(job.ID, 10)).
-		Interface("args", job.Args).
-		Msg("Processing job")
 
+	log.Info().Str("job_id", jobID).Msg("Job started")
+
+	stageTimestamps := map[string]time.Time{
+		"started": start,
+	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Error().Err(err).Msg("Unable to determine home directory for config file")
+		log.Error().Err(err).Msg("Unable to determine home directory")
 		return err
 	}
 	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
 
-	// Call Ollama
+	// Before LLM call
+	stageTimestamps["before_ollama"] = time.Now()
 	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath)
+	stageTimestamps["after_ollama"] = time.Now()
 	if err != nil {
 		log.Error().Err(err).Msg("Ollama call failed")
 		return err
 	}
-	log.Info().
-		Str("job_id", strconv.FormatInt(job.ID, 10)).
-		Msg("Ollama call successful, saving to DB")
-	
+
 	jsonResponse, err := json.Marshal(map[string]string{"response": response})
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal response as JSON")
+		log.Error().Err(err).Msg("Failed to marshal response")
 		return err
 	}
 
@@ -63,34 +64,48 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	}
 	defer tx.Rollback(ctx)
 
-	// Get Group ID if it exists
 	groupID, err := w.resolveGroup(ctx, tx, jobID, job.Args.GroupName)
 	if err != nil {
 		return err
 	}
-	
-	// Insert the results
+
+	stageTimestamps["before_db_insert"] = time.Now()
 	if err := w.insertResult(ctx, tx, job.ID, jsonResponse, groupID); err != nil {
 		return err
 	}
-	
 
 	_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to complete job transactionally")
 		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		log.Error().Err(err).Msg("Failed to commit transaction")
 		return err
 	}
+	stageTimestamps["after_db_commit"] = time.Now()
 
+	// Final duration logging
+	for stage, ts := range stageTimestamps {
+		log.Info().
+			Str("job_id", jobID).
+			Str("stage", stage).
+			Str("time", ts.Format(time.RFC3339)).
+			Msg("Stage timestamp")
+	}
+
+	// Log durations between stages
 	log.Info().
-		Str("job_id", strconv.FormatInt(job.ID, 10)).
-		Msg("Job completed and saved")
+		Str("job_id", jobID).
+		Msgf(
+			"Durations: Ollama=%s, DB_Insert=%s, Total=%s",
+			stageTimestamps["after_ollama"].Sub(stageTimestamps["before_ollama"]),
+			stageTimestamps["after_db_commit"].Sub(stageTimestamps["before_db_insert"]),
+			time.Since(start),
+		)
+
 	return nil
 }
+
 
 func RegisterWorkers(db *pgxpool.Pool) *river.Workers {
 	workers := river.NewWorkers()
@@ -101,7 +116,7 @@ func RegisterWorkers(db *pgxpool.Pool) *river.Workers {
 func createWorkerClient(driver *riverpgxv5.Driver, workers *river.Workers) (*river.Client[pgx.Tx], error) {
 	return river.NewClient[pgx.Tx](driver, &river.Config{
 		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: 10},
+			river.QueueDefault: {MaxWorkers: 1},
 		},
 		Workers:                     workers,
 		CompletedJobRetentionPeriod: 72 * time.Hour,

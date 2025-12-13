@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 
 	"github.com/jackc/pgx/v5"
@@ -73,47 +77,163 @@ func enqueueBulkJobsFromFile(ctx context.Context, riverClient *river.Client[pgx.
 	}
 	defer file.Close()
 
-	var jobs []BulkJob
-	if err := json.NewDecoder(file).Decode(&jobs); err != nil {
-		return err
+	decoder := json.NewDecoder(bufio.NewReader(file))
+
+	// Peek first non-whitespace token
+	tok, err := nextNonSpaceToken(decoder)
+	if err != nil {
+		return fmt.Errorf("cannot read file: %w", err)
 	}
 
+	// NDJSON format (each line = JSON object)
+	if tok != json.Delim('[') {
+		return processNDJSON(ctx, decoder, riverClient, dbPool)
+	}
+
+	return processJSONArray(ctx, decoder, riverClient, dbPool)
+}
+
+// ------ JSON ARRAY VERSION ------
+func processJSONArray(ctx context.Context, decoder *json.Decoder, riverClient *river.Client[pgx.Tx], dbPool *pgxpool.Pool) error {
+	const batchSize = 500
+
+	batch := make([]river.InsertManyParams, 0, batchSize)
+	total := 0
+	count := 0
+
+	for decoder.More() {
+		var job BulkJob
+		if err := decoder.Decode(&job); err != nil {
+			return fmt.Errorf("decode error at item %d: %w", total, err)
+		}
+
+		params, err := toInsertParams(job)
+		if err != nil {
+			return err
+		}
+
+		batch = append(batch, params)
+		total++
+		count++
+
+		if total%100 == 0 {
+			log.Info().Msgf("Loaded %d jobs...", total)
+		}
+
+		if count == batchSize {
+			if err := insertBatch(ctx, riverClient, dbPool, batch); err != nil {
+				return err
+			}
+			log.Info().Msgf("Inserted batch of %d jobs (total: %d)", batchSize, total)
+			batch = batch[:0]
+			count = 0
+		}
+	}
+
+	if len(batch) > 0 {
+		if err := insertBatch(ctx, riverClient, dbPool, batch); err != nil {
+			return err
+		}
+		log.Info().Msgf("Inserted final batch of %d jobs (total: %d)", len(batch), total)
+	}
+
+	log.Info().Msgf("Bulk insert complete. Total jobs inserted: %d", total)
+	return nil
+}
+
+// ------ NDJSON VERSION ------
+func processNDJSON(ctx context.Context, decoder *json.Decoder, riverClient *river.Client[pgx.Tx], dbPool *pgxpool.Pool) error {
+	const batchSize = 500
+
+	batch := make([]river.InsertManyParams, 0, batchSize)
+	total := 0
+	count := 0
+
+	for {
+		var job BulkJob
+		if err := decoder.Decode(&job); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+
+		params, err := toInsertParams(job)
+		if err != nil {
+			return err
+		}
+
+		batch = append(batch, params)
+		total++
+		count++
+
+		if total%100 == 0 {
+			log.Info().Msgf("Loaded %d jobs...", total)
+		}
+
+		if count == batchSize {
+			if err := insertBatch(ctx, riverClient, dbPool, batch); err != nil {
+				return err
+			}
+			log.Info().Msgf("Inserted batch of %d jobs (total: %d)", batchSize, total)
+			batch = batch[:0]
+			count = 0
+		}
+	}
+
+	if len(batch) > 0 {
+		if err := insertBatch(ctx, riverClient, dbPool, batch); err != nil {
+			return err
+		}
+		log.Info().Msgf("Inserted final batch of %d jobs (total: %d)", len(batch), total)
+	}
+
+	log.Info().Msgf("Bulk insert complete. Total jobs inserted: %d", total)
+	return nil
+}
+
+// Helper: Read first non-space token
+func nextNonSpaceToken(dec *json.Decoder) (json.Token, error) {
+	for {
+		t, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := t.(json.Delim); ok || t != nil {
+			return t, nil
+		}
+	}
+}
+
+func toInsertParams(job BulkJob) (river.InsertManyParams, error) {
+	var insertOpts *river.InsertOpts
+	if job.Metadata != nil {
+		metaBytes, err := json.Marshal(job.Metadata)
+		if err != nil {
+			return river.InsertManyParams{}, err
+		}
+		insertOpts = &river.InsertOpts{Metadata: metaBytes}
+	}
+	return river.InsertManyParams{
+		Args:       job.Args,
+		InsertOpts: insertOpts,
+	}, nil
+}
+
+func insertBatch(ctx context.Context, riverClient *river.Client[pgx.Tx], dbPool *pgxpool.Pool, batch []river.InsertManyParams) error {
 	tx, err := dbPool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	var jobsToInsert []river.InsertManyParams
-
-	for i := range jobs {
-
-		var insertOpts *river.InsertOpts
-		if jobs[i].Metadata != nil {
-			metadataBytes, err := json.Marshal(jobs[i].Metadata)
-			if err != nil {
-				return err
-			}
-			insertOpts = &river.InsertOpts{Metadata: metadataBytes}
-		}
-		jobsToInsert = append(jobsToInsert, river.InsertManyParams{
-			Args:       jobs[i].Args,
-			InsertOpts: insertOpts,
-		})
-	}
-
-	results, err := riverClient.InsertManyTx(ctx, tx, jobsToInsert)
-	if err != nil {
+	if _, err := riverClient.InsertManyTx(ctx, tx, batch); err != nil {
 		return err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return err
-	}
-
-	log.Info().Msgf("Successfully enqueued %d jobs", len(results))
-	return nil
+	return tx.Commit(ctx)
 }
+
 
 func newRiverClient(driver *riverpgxv5.Driver) (*river.Client[pgx.Tx], error) {
 	return river.NewClient[pgx.Tx](driver, &river.Config{})

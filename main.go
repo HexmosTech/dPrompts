@@ -27,7 +27,13 @@ func main() {
 	n := flag.Int("n", 10, "Number of results to display (view mode)")
 	
 	queueN := flag.Int("queue-n", 10, "Number of queued jobs to display (for view action)")
-	queueAction := flag.String("action", "", "Queue action: 'view' to list queued jobs, 'clear' to delete all queued jobs")
+	queueAction := flag.String(
+		"action",
+		"",
+		"Queue action: 'view', 'clear', 'count', 'completed-count', 'completed-first', 'completed-last'",
+	)
+	
+
 
 	flag.Parse()
 
@@ -80,9 +86,28 @@ func main() {
 			if err := ClearQueuedJobs(ctx, dbPool); err != nil {
 				log.Fatal().Err(err).Msg("Failed to clear queued jobs")
 			}
+		case "count":
+			if err := CountQueuedJobs(ctx, dbPool); err != nil {
+				log.Fatal().Err(err).Msg("Failed to count queued jobs")
+			}
+		case "completed-count":
+			if err := CountCompletedJobs(ctx, dbPool); err != nil {
+				log.Fatal().Err(err).Msg("Failed to count completed jobs")
+			}
+		case "completed-first":
+			if err := ViewFirstCompletedJobs(ctx, dbPool, *queueN); err != nil {
+				log.Fatal().Err(err).Msg("Failed to view first completed jobs")
+			}
+		
+		case "completed-last":
+			if err := ViewLastCompletedJobs(ctx, dbPool, *queueN); err != nil {
+				log.Fatal().Err(err).Msg("Failed to view last completed jobs")
+			}
+		
 		default:
 			log.Fatal().Str("action", *queueAction).Msg("Unknown queue action")
 		}
+	
 	default:
 		log.Fatal().Str("mode", *mode).Msg("Unknown mode")
 	}
