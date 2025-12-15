@@ -24,3 +24,32 @@ func DeleteGroupAndResults(ctx context.Context, db *pgxpool.Pool, groupID int) e
 	fmt.Printf("Deleted %d results and %d group(s) for group ID %d\n", res1.RowsAffected(), res2.RowsAffected(), groupID)
 	return nil
 }
+
+func DeleteGroupAndResultsAll(ctx context.Context, db *pgxpool.Pool,i int) error {
+	// Delete all results that belong to any group
+	_ = i
+	res1, err := db.Exec(ctx, `
+		DELETE FROM dprompts_results
+		WHERE group_id IS NOT NULL
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to delete grouped results: %w", err)
+	}
+
+	// Delete all groups
+	res2, err := db.Exec(ctx, `
+		DELETE FROM dprompt_groups
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to delete groups: %w", err)
+	}
+
+	fmt.Printf(
+		"TEMP CLEANUP: Deleted %d grouped results and %d group(s)\n",
+		res1.RowsAffected(),
+		res2.RowsAffected(),
+	)
+
+	return nil
+}
+

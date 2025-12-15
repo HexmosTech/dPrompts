@@ -30,6 +30,29 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	start := time.Now()
 	jobID := strconv.FormatInt(job.ID, 10)
 
+	var groupName string
+
+	if len(job.Metadata) > 0 {
+		var meta map[string]any
+	
+		if err := json.Unmarshal(job.Metadata, &meta); err != nil {
+			log.Warn().
+				Err(err).
+				Str("job_id", jobID).
+				Msg("Invalid metadata JSON, ignoring")
+		} else {
+			if v, ok := meta["group_name"]; ok {
+				if s, ok := v.(string); ok {
+					groupName = s
+				} else {
+					log.Warn().
+						Str("job_id", jobID).
+						Msg("metadata.group_name is not a string, ignoring")
+				}
+			}
+		}
+	}
+	
 	log.Info().Str("job_id", jobID).Msg("Job started")
 
 	stageTimestamps := map[string]time.Time{
@@ -45,7 +68,7 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 
 	// Before LLM call
 	stageTimestamps["before_ollama"] = time.Now()
-	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath, job.Args.GroupName, job.Args.SystemPrompt)
+	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath, groupName, job.Args.BasePrompt)
 	stageTimestamps["after_ollama"] = time.Now()
 	if err != nil {
 		log.Error().Err(err).Msg("Ollama call failed")
@@ -64,7 +87,7 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	}
 	defer tx.Rollback(ctx)
 
-	groupID, err := w.resolveGroup(ctx, tx, jobID, job.Args.GroupName)
+	groupID, err := w.resolveGroup(ctx, tx, jobID, groupName)
 	if err != nil {
 		return err
 	}
@@ -113,10 +136,16 @@ func RegisterWorkers(db *pgxpool.Pool) *river.Workers {
 	return workers
 }
 
-func createWorkerClient(driver *riverpgxv5.Driver, workers *river.Workers) (*river.Client[pgx.Tx], error) {
+func createWorkerClient(
+	driver *riverpgxv5.Driver,
+	workers *river.Workers,
+	concurrentWorkers int) (*river.Client[pgx.Tx], error) {
+	log.Info().
+	Int("concurrent_workers", concurrentWorkers).
+	Msg("Initializing River worker client")
 	return river.NewClient[pgx.Tx](driver, &river.Config{
 		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: 1},
+			river.QueueDefault: {MaxWorkers: concurrentWorkers},
 		},
 		Workers:                     workers,
 		CompletedJobRetentionPeriod: 72 * time.Hour,
@@ -124,8 +153,21 @@ func createWorkerClient(driver *riverpgxv5.Driver, workers *river.Workers) (*riv
 }
 
 func RunWorker(ctx context.Context, driver *riverpgxv5.Driver, cancel context.CancelFunc, db *pgxpool.Pool) {
+	
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Unable to determine home directory")
+	}
+
+	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
+
+	workerConfig, err := LoadWorkerConfig(configPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to load worker config")
+	}
+
 	workers := RegisterWorkers(db)
-	riverClient, err := createWorkerClient(driver, workers)
+	riverClient, err := createWorkerClient(driver, workers, workerConfig.ConcurrentWorkers)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create River client")
 	}

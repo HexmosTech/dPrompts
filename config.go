@@ -66,3 +66,22 @@ func NewDBPool(ctx context.Context, configPath string) (*pgxpool.Pool, error) {
 
 	return dbPool, nil
 }
+
+func LoadWorkerConfig(path string) (*WorkerConfig, error) {
+	var conf struct {
+		Worker WorkerConfig
+	}
+
+	_, err := toml.DecodeFile(path, &conf)
+	if err != nil {
+		return nil, err
+	}
+
+	// Default fallback
+	if conf.Worker.ConcurrentWorkers <= 0 {
+		conf.Worker.ConcurrentWorkers = 1
+	}
+
+	return &conf.Worker, nil
+}
+

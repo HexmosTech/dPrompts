@@ -70,9 +70,16 @@ func viewLastResults(ctx context.Context, db *pgxpool.Pool, n int) error {
 // CLI: Display all groups with ID and name
 func viewTotalGroups(ctx context.Context, db *pgxpool.Pool) error {
 	rows, err := db.Query(ctx, `
-        SELECT id, group_name, created_at
-        FROM dprompt_groups
-        ORDER BY id
+        SELECT
+            g.id,
+            g.group_name,
+            g.created_at,
+            COUNT(r.id) AS job_count
+        FROM dprompt_groups g
+        LEFT JOIN dprompts_results r
+            ON r.group_id = g.id
+        GROUP BY g.id, g.group_name, g.created_at
+        ORDER BY g.id
     `)
 	if err != nil {
 		return err
@@ -81,16 +88,29 @@ func viewTotalGroups(ctx context.Context, db *pgxpool.Pool) error {
 
 	fmt.Println("Groups:")
 	for rows.Next() {
-		var id int
-		var name string
-		var createdAt time.Time
-		if err := rows.Scan(&id, &name, &createdAt); err != nil {
+		var (
+			id        int
+			name      string
+			createdAt time.Time
+			jobCount  int
+		)
+
+		if err := rows.Scan(&id, &name, &createdAt, &jobCount); err != nil {
 			return err
 		}
-		fmt.Printf("ID: %d | Name: %s | CreatedAt: %s\n", id, name, createdAt.Format(time.RFC3339))
+
+		fmt.Printf(
+			"ID: %d | Name: %s | Jobs: %d | CreatedAt: %s\n",
+			id,
+			name,
+			jobCount,
+			createdAt.Format(time.RFC3339),
+		)
 	}
+
 	return rows.Err()
 }
+
 
 
 // CLI: Display results filtered by group ID
