@@ -33,10 +33,46 @@ func main() {
 		"Queue action: 'view', 'clear', 'count', 'completed-count', 'completed-first', 'completed-last'",
 	)
 	
+	flag.Usage = func() {
+		w := flag.CommandLine.Output()
+		w.Write([]byte(`
+Usage:
+app --mode <mode> [options]
 
+Modes:
+client        Enqueue a job
+worker        Run the worker
+view          View results
+delete-group  Delete a group and its results
+queue         Queue operations
+help          Show this help message
+
+Client mode options:
+--args              Job args as JSON
+--metadata          Job metadata as JSON
+--bulk-from-file    Bulk insert jobs from JSON file
+
+View mode options:
+--total-groups      Show total groups
+--group <id>        Show results for a group
+-n <number>         Number of results to display
+
+Delete-group mode options:
+--delete-group-id   Group ID to delete
+
+Queue mode options:
+--action            view | clear | count | completed-count | completed-first | completed-last
+--queue-n           Number of jobs to display
+
+		`))
+	}
 
 	flag.Parse()
-
+	if *mode == "help" {
+		flag.Usage()
+		os.Exit(0)
+	}
+	
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

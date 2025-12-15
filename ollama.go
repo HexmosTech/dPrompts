@@ -25,7 +25,7 @@ func LoadLLMConfig(configPath string) (*LLMConfig, error) {
 	return &conf.LLM, nil
 }
 
-func CallOllama(prompt string, schema interface{}, configPath string) (string, error) {
+func CallOllama(prompt string, schema interface{}, configPath string, groupName string, system_prompt string) (string, error) {
 	startTotal := time.Now()
 
 	// 1️⃣ Load config
@@ -43,7 +43,9 @@ func CallOllama(prompt string, schema interface{}, configPath string) (string, e
 	req := map[string]interface{}{
 		"model":  llmConfig.Model,
 		"stream": false,
+		"session_id": groupName,
 		"messages": []map[string]string{
+			{"role": "system", "content": system_prompt },
 			{"role": "user", "content": prompt},
 		},
 		"options": map[string]float64{

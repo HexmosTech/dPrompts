@@ -14,6 +14,7 @@ type DPromptsJobArgs struct {
     Prompt     string                 `json:"prompt"`
     Schema     interface{}            `json:"schema,omitempty"`
     GroupName string                 `json:"group_name,omitempty"` // optional
+	SystemPrompt string                 `json:"system_prompt,omitempty"` // optional
 }
 
 

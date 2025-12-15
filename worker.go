@@ -45,7 +45,7 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 
 	// Before LLM call
 	stageTimestamps["before_ollama"] = time.Now()
-	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath)
+	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath, job.Args.GroupName, job.Args.SystemPrompt)
 	stageTimestamps["after_ollama"] = time.Now()
 	if err != nil {
 		log.Error().Err(err).Msg("Ollama call failed")
