@@ -16,7 +16,7 @@ func main() {
 	var configPath string
 
 	rootCmd := &cobra.Command{
-		Use:   "dpr",
+		Use: "dpr",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if configPath == "" {
 				home, err := os.UserHomeDir()

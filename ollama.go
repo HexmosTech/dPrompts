@@ -11,8 +11,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-
-
 func LoadLLMConfig(configPath string) (*LLMConfig, error) {
 	var conf struct {
 		LLM LLMConfig
@@ -91,6 +89,3 @@ func CallOllama(
 
 	return ollamaResp.Message.Content, nil
 }
-
-
-

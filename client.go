@@ -17,8 +17,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-
-
 type BulkJob struct {
 	SubTasks   []DPromptsSubTask `json:"sub_tasks"`
 	BasePrompt string            `json:"base_prompt,omitempty"`
@@ -46,7 +44,6 @@ func RunClient(ctx context.Context, driver *riverpgxv5.Driver, argsJSON string, 
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		log.Fatal().Err(err).Msg("Failed to parse args JSON")
 	}
-
 
 	var insertOpts *river.InsertOpts
 	if metadataJSON != "" {
@@ -206,6 +203,7 @@ func processNDJSON(ctx context.Context, decoder *json.Decoder, riverClient *rive
 	log.Info().Msgf("Bulk insert complete. Total jobs inserted: %d", total)
 	return nil
 }
+
 // Helper: Read first non-space token
 func nextNonSpaceToken(dec *json.Decoder) (json.Token, error) {
 	for {
@@ -247,11 +245,6 @@ func toInsertParams(job BulkJob) (river.InsertManyParams, error) {
 	}, nil
 }
 
-
-
-
-
-
 func insertBatch(
 	ctx context.Context,
 	riverClient *river.Client[pgx.Tx],
@@ -277,9 +270,6 @@ func insertBatch(
 
 	return nil
 }
-
-
-
 
 func newRiverClient(driver *riverpgxv5.Driver) (*river.Client[pgx.Tx], error) {
 	return river.NewClient[pgx.Tx](driver, &river.Config{})

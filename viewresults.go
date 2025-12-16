@@ -147,8 +147,6 @@ func viewTotalGroups(ctx context.Context, db *pgxpool.Pool) error {
 	return rows.Err()
 }
 
-
-
 // CLI: Display results filtered by group ID
 func viewResultsByGroup(ctx context.Context, db *pgxpool.Pool, groupID int) error {
 	rows, err := db.Query(ctx, `

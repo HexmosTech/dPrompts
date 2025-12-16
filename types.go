@@ -10,8 +10,8 @@ type DBConfig struct {
 }
 
 type DPromptsSubTask struct {
-	Prompt       string      `json:"prompt"`
-	Schema       interface{} `json:"schema,omitempty"`
+	Prompt   string                 `json:"prompt"`
+	Schema   interface{}            `json:"schema,omitempty"`
 	Metadata map[string]interface{} `json:"metadata,omitempty"` // <-- new
 
 }
@@ -19,7 +19,6 @@ type DPromptsSubTask struct {
 type DPromptsJobArgs struct {
 	SubTasks   []DPromptsSubTask `json:"sub_tasks"`
 	BasePrompt string            `json:"base_prompt,omitempty"`
-
 }
 
 type DPromptsJobResult struct {
@@ -44,8 +43,6 @@ type OllamaResponse struct {
 	} `json:"message"`
 }
 
-
 type WorkerConfig struct {
 	ConcurrentWorkers int `toml:"concurrent_workers"`
 }
-

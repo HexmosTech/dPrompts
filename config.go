@@ -11,7 +11,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-
 func LoadDBConfig(path string) (*DBConfig, error) {
 	var conf struct {
 		Database DBConfig
@@ -22,7 +21,6 @@ func LoadDBConfig(path string) (*DBConfig, error) {
 	}
 	return &conf.Database, nil
 }
-
 
 func NewDBPool(ctx context.Context, configPath string) (*pgxpool.Pool, error) {
 
@@ -84,4 +82,3 @@ func LoadWorkerConfig(path string) (*WorkerConfig, error) {
 
 	return &conf.Worker, nil
 }
-

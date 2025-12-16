@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -41,7 +40,6 @@ func humanizeDuration(d time.Duration) string {
 	}
 }
 
-
 func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
 	jobStart := time.Now()
 	jobID := strconv.FormatInt(job.ID, 10)
@@ -62,10 +60,10 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
+		log.Error().Err(err).Msg("Unable to determine home directory for config file")
 		return err
 	}
-	configPath := filepath.Join(homeDir, ".dprompts.toml")
-
+	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -85,10 +83,10 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	// ---- subtasks ----
 	for i, sub := range job.Args.SubTasks {
 		log.Info().
-		Str("job_id", jobID).
-		Int("subtask", i).
-		Any("metadata", sub.Metadata).
-		Msg("Subtask started")
+			Str("job_id", jobID).
+			Int("subtask", i).
+			Any("metadata", sub.Metadata).
+			Msg("Subtask started")
 		ollamaStart := time.Now()
 
 		response, err := CallOllama(
@@ -155,11 +153,6 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 	return nil
 }
 
-
-
-
-
-
 func RegisterWorkers(db *pgxpool.Pool) *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &DPromptsWorker{db: db})
@@ -171,8 +164,8 @@ func createWorkerClient(
 	workers *river.Workers,
 	concurrentWorkers int) (*river.Client[pgx.Tx], error) {
 	log.Info().
-	Int("concurrent_workers", concurrentWorkers).
-	Msg("Initializing River worker client")
+		Int("concurrent_workers", concurrentWorkers).
+		Msg("Initializing River worker client")
 	return river.NewClient[pgx.Tx](driver, &river.Config{
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: concurrentWorkers},
@@ -183,7 +176,7 @@ func createWorkerClient(
 }
 
 func RunWorker(ctx context.Context, driver *riverpgxv5.Driver, cancel context.CancelFunc, db *pgxpool.Pool) {
-	
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Unable to determine home directory")
@@ -256,7 +249,6 @@ func (w *DPromptsWorker) resolveGroup(ctx context.Context, tx pgx.Tx, jobID stri
 	return &id, nil
 }
 
-
 // insertResult inserts or updates a dprompt result for a job
 func (w *DPromptsWorker) insertResult(ctx context.Context, tx pgx.Tx, jobID int64, jsonResponse []byte, groupID *int) error {
 	_, err := tx.Exec(ctx,
@@ -275,5 +267,3 @@ func (w *DPromptsWorker) insertResult(ctx context.Context, tx pgx.Tx, jobID int6
 	}
 	return nil
 }
-
-

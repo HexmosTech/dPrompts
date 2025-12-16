@@ -25,7 +25,6 @@ func CountQueuedJobs(ctx context.Context, db *pgxpool.Pool) error {
 	return nil
 }
 
-
 func ViewQueuedJobs(ctx context.Context, db *pgxpool.Pool, n int) error {
 	rows, err := db.Query(ctx, `
 		SELECT id, state, created_at, scheduled_at
@@ -120,8 +119,6 @@ func ViewFirstCompletedJobs(ctx context.Context, db *pgxpool.Pool, n int) error 
 	return rows.Err()
 }
 
-
-
 func ViewLastCompletedJobs(ctx context.Context, db *pgxpool.Pool, n int) error {
 	rows, err := db.Query(ctx, `
 		SELECT id, created_at, finalized_at, args
@@ -159,5 +156,3 @@ func ViewLastCompletedJobs(ctx context.Context, db *pgxpool.Pool, n int) error {
 
 	return rows.Err()
 }
-
-
