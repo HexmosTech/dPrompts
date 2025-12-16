@@ -17,20 +17,19 @@ func main() {
 
 	rootCmd := &cobra.Command{
 		Use:   "dpr",
-		Short: "dpr CLI tool for job management",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if configPath == "" {
 				home, err := os.UserHomeDir()
 				if err != nil {
 					return err
 				}
-				configPath = home + "/.dprompt.toml"
+				configPath = home + "/.dprompts.toml"
 			}
 			return nil
 		},
 	}
 
-	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to config file (default: $HOME/.dprompt.toml)")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to config file (default: $HOME/.dprompts.toml)")
 
 	// ---- Client subcommand ----
 	var argsJSON, metadataJSON, bulkFile string

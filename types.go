@@ -9,13 +9,18 @@ type DBConfig struct {
 	Port     string
 }
 
-
-type DPromptsJobArgs struct {
+type DPromptsSubTask struct {
 	Prompt       string      `json:"prompt"`
 	Schema       interface{} `json:"schema,omitempty"`
-	BasePrompt string      `json:"base_prompt,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"` // <-- new
+
 }
 
+type DPromptsJobArgs struct {
+	SubTasks   []DPromptsSubTask `json:"sub_tasks"`
+	BasePrompt string            `json:"base_prompt,omitempty"`
+
+}
 
 type DPromptsJobResult struct {
 	Response string `json:"response"`

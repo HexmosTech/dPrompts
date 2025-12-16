@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -26,60 +28,43 @@ func (w *DPromptsWorker) Timeout(job *river.Job[DPromptsJobArgs]) time.Duration 
 	return 5 * time.Minute
 }
 
+func humanizeDuration(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		m := int(d.Minutes())
+		s := int(d.Seconds()) % 60
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+}
+
+
 func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
-	start := time.Now()
+	jobStart := time.Now()
 	jobID := strconv.FormatInt(job.ID, 10)
 
 	var groupName string
-
 	if len(job.Metadata) > 0 {
 		var meta map[string]any
-	
-		if err := json.Unmarshal(job.Metadata, &meta); err != nil {
-			log.Warn().
-				Err(err).
-				Str("job_id", jobID).
-				Msg("Invalid metadata JSON, ignoring")
-		} else {
-			if v, ok := meta["group_name"]; ok {
-				if s, ok := v.(string); ok {
-					groupName = s
-				} else {
-					log.Warn().
-						Str("job_id", jobID).
-						Msg("metadata.group_name is not a string, ignoring")
-				}
+		if err := json.Unmarshal(job.Metadata, &meta); err == nil {
+			if v, ok := meta["group_name"].(string); ok {
+				groupName = v
 			}
 		}
 	}
-	
-	log.Info().Str("job_id", jobID).Msg("Job started")
 
-	stageTimestamps := map[string]time.Time{
-		"started": start,
-	}
+	log.Info().
+		Str("job_id", jobID).
+		Msg("Job started")
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Error().Err(err).Msg("Unable to determine home directory")
 		return err
 	}
-	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
-
-	// Before LLM call
-	stageTimestamps["before_ollama"] = time.Now()
-	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath, groupName, job.Args.BasePrompt)
-	stageTimestamps["after_ollama"] = time.Now()
-	if err != nil {
-		log.Error().Err(err).Msg("Ollama call failed")
-		return err
-	}
-
-	jsonResponse, err := json.Marshal(map[string]string{"response": response})
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal response")
-		return err
-	}
+	configPath := filepath.Join(homeDir, ".dprompts.toml")
 
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
@@ -92,42 +77,87 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 		return err
 	}
 
-	stageTimestamps["before_db_insert"] = time.Now()
+	results := make(map[string]string)
+
+	var ollamaTotal time.Duration
+	var dbTotal time.Duration
+
+	// ---- subtasks ----
+	for i, sub := range job.Args.SubTasks {
+		log.Info().
+		Str("job_id", jobID).
+		Int("subtask", i).
+		Any("metadata", sub.Metadata).
+		Msg("Subtask started")
+		ollamaStart := time.Now()
+
+		response, err := CallOllama(
+			sub.Prompt,
+			sub.Schema,
+			configPath,
+			job.Args.BasePrompt,
+		)
+
+		ollamaDur := time.Since(ollamaStart)
+		ollamaTotal += ollamaDur
+
+		if err != nil {
+			log.Error().
+				Err(err).
+				Str("job_id", jobID).
+				Int("subtask", i).
+				Msg("Subtask failed")
+			return err
+		}
+
+		results[fmt.Sprintf("subtask_%d", i)] = response
+
+		log.Info().
+			Str("job_id", jobID).
+			Int("subtask", i).
+			Str("time_taken_by_ollama", humanizeDuration(ollamaDur)).
+			Msg("Subtask completed")
+	}
+
+	// ---- DB work ----
+	dbStart := time.Now()
+
+	jsonResponse, err := json.Marshal(results)
+	if err != nil {
+		return err
+	}
+
 	if err := w.insertResult(ctx, tx, job.ID, jsonResponse, groupID); err != nil {
 		return err
 	}
 
-	_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
-	if err != nil {
+	if _, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job); err != nil {
 		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	stageTimestamps["after_db_commit"] = time.Now()
 
-	// Final duration logging
-	for stage, ts := range stageTimestamps {
-		log.Info().
-			Str("job_id", jobID).
-			Str("stage", stage).
-			Str("time", ts.Format(time.RFC3339)).
-			Msg("Stage timestamp")
-	}
+	dbTotal += time.Since(dbStart)
 
-	// Log durations between stages
+	// ---- final summary ----
+	totalTime := time.Since(jobStart)
+
 	log.Info().
 		Str("job_id", jobID).
-		Msgf(
-			"Durations: Ollama=%s, DB_Insert=%s, Total=%s",
-			stageTimestamps["after_ollama"].Sub(stageTimestamps["before_ollama"]),
-			stageTimestamps["after_db_commit"].Sub(stageTimestamps["before_db_insert"]),
-			time.Since(start),
-		)
+		Int("subtasks", len(job.Args.SubTasks)).
+		Str("ollama_total", humanizeDuration(ollamaTotal)).
+		Str("db_total", humanizeDuration(dbTotal)).
+		Str("total_time", humanizeDuration(totalTime)).
+		Msg("Job completed")
 
 	return nil
 }
+
+
+
+
 
 
 func RegisterWorkers(db *pgxpool.Pool) *river.Workers {
@@ -223,7 +253,6 @@ func (w *DPromptsWorker) resolveGroup(ctx context.Context, tx pgx.Tx, jobID stri
 		}
 	}
 
-	log.Info().Str("job_id", jobID).Int("group_id", id).Msg("Resolved group")
 	return &id, nil
 }
 

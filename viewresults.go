@@ -65,6 +65,34 @@ func viewLastResults(ctx context.Context, db *pgxpool.Pool, n int) error {
 	return rows.Err()
 }
 
+func normalizeJSON(v any) any {
+	switch t := v.(type) {
+
+	case map[string]any:
+		for k, v2 := range t {
+			t[k] = normalizeJSON(v2)
+		}
+		return t
+
+	case []any:
+		for i, v2 := range t {
+			t[i] = normalizeJSON(v2)
+		}
+		return t
+
+	case string:
+		// Try to decode string as JSON
+		var inner any
+		if err := json.Unmarshal([]byte(t), &inner); err == nil {
+			return normalizeJSON(inner)
+		}
+		// Not JSON → keep original string
+		return t
+
+	default:
+		return t
+	}
+}
 
 // CLI: Display total number of groups
 // CLI: Display all groups with ID and name
@@ -87,7 +115,11 @@ func viewTotalGroups(ctx context.Context, db *pgxpool.Pool) error {
 	defer rows.Close()
 
 	fmt.Println("Groups:")
+
+	found := false
 	for rows.Next() {
+		found = true
+
 		var (
 			id        int
 			name      string
@@ -106,6 +138,10 @@ func viewTotalGroups(ctx context.Context, db *pgxpool.Pool) error {
 			jobCount,
 			createdAt.Format(time.RFC3339),
 		)
+	}
+
+	if !found {
+		fmt.Println("No groups found")
 	}
 
 	return rows.Err()
@@ -128,35 +164,44 @@ func viewResultsByGroup(ctx context.Context, db *pgxpool.Pool, groupID int) erro
 	defer rows.Close()
 
 	for rows.Next() {
-		var id int
-		var jobID int64
-		var responseData []byte
-		var createdAt time.Time
-		var groupName string
+		var (
+			id          int
+			jobID       int64
+			responseRaw []byte
+			createdAt   time.Time
+			groupName   string
+		)
 
-		if err := rows.Scan(&id, &jobID, &responseData, &createdAt, &groupName); err != nil {
+		if err := rows.Scan(&id, &jobID, &responseRaw, &createdAt, &groupName); err != nil {
 			return err
 		}
 
-		var outer map[string]string
-		if err := json.Unmarshal(responseData, &outer); err != nil {
-			fmt.Printf("ID: %d | JobID: %d | Group: %s | CreatedAt: %s\nResponse: %s\n\n",
-				id, jobID, groupName, createdAt.Format(time.RFC3339), string(responseData))
+		fmt.Printf(
+			"ID: %d | JobID: %d | Group: %s | CreatedAt: %s\n",
+			id,
+			jobID,
+			groupName,
+			createdAt.Format(time.RFC3339),
+		)
+
+		// Try to decode top-level JSON
+		var data any
+		if err := json.Unmarshal(responseRaw, &data); err != nil {
+			// Not JSON at all → print raw string
+			fmt.Printf("Response:\n%s\n\n", string(responseRaw))
 			continue
 		}
 
-		var inner any
-		if err := json.Unmarshal([]byte(outer["response"]), &inner); err != nil {
-			fmt.Printf("ID: %d | JobID: %d | Group: %s | CreatedAt: %s\nResponse: %s\n\n",
-				id, jobID, groupName, createdAt.Format(time.RFC3339), outer["response"])
+		normalized := normalizeJSON(data)
+
+		pretty, err := json.MarshalIndent(normalized, "", "  ")
+		if err != nil {
+			fmt.Printf("Response:\n%v\n\n", normalized)
 			continue
 		}
 
-		prettyInner, _ := json.MarshalIndent(inner, "", "  ")
-		fmt.Printf("ID: %d | JobID: %d | Group: %s | CreatedAt: %s\nResponse:\n%s\n\n",
-			id, jobID, groupName, createdAt.Format(time.RFC3339), string(prettyInner))
+		fmt.Printf("Response:\n%s\n\n", pretty)
 	}
 
 	return rows.Err()
 }
-
