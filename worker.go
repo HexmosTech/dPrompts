@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"strconv"
@@ -26,13 +27,36 @@ func (w *DPromptsWorker) Timeout(job *river.Job[DPromptsJobArgs]) time.Duration 
 	return 5 * time.Minute
 }
 
-func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
-	jobID := strconv.FormatInt(job.ID, 10)
-	log.Info().
-		Str("job_id", strconv.FormatInt(job.ID, 10)).
-		Interface("args", job.Args).
-		Msg("Processing job")
+func humanizeDuration(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		m := int(d.Minutes())
+		s := int(d.Seconds()) % 60
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+}
 
+func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArgs]) error {
+	jobStart := time.Now()
+	jobID := strconv.FormatInt(job.ID, 10)
+
+	var groupName string
+	if len(job.Metadata) > 0 {
+		var meta map[string]any
+		if err := json.Unmarshal(job.Metadata, &meta); err == nil {
+			if v, ok := meta["group_name"].(string); ok {
+				groupName = v
+			}
+		}
+	}
+
+	log.Info().
+		Str("job_id", jobID).
+		Msg("Job started")
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -40,55 +64,92 @@ func (w *DPromptsWorker) Work(ctx context.Context, job *river.Job[DPromptsJobArg
 		return err
 	}
 	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
-
-	// Call Ollama
-	response, err := CallOllama(job.Args.Prompt, job.Args.Schema, configPath)
-	if err != nil {
-		log.Error().Err(err).Msg("Ollama call failed")
-		return err
-	}
-	log.Info().
-		Str("job_id", strconv.FormatInt(job.ID, 10)).
-		Msg("Ollama call successful, saving to DB")
-	
-	jsonResponse, err := json.Marshal(map[string]string{"response": response})
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal response as JSON")
-		return err
-	}
-
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	// Get Group ID if it exists
-	groupID, err := w.resolveGroup(ctx, tx, jobID, job.Args.GroupName)
+	groupID, err := w.resolveGroup(ctx, tx, jobID, groupName)
 	if err != nil {
 		return err
 	}
-	
-	// Insert the results
+
+	results := make(map[string]string)
+
+	var ollamaTotal time.Duration
+	var dbTotal time.Duration
+
+	// ---- subtasks ----
+	for i, sub := range job.Args.SubTasks {
+		log.Info().
+			Str("job_id", jobID).
+			Int("subtask", i).
+			Any("metadata", sub.Metadata).
+			Msg("Subtask started")
+		ollamaStart := time.Now()
+
+		response, err := CallOllama(
+			sub.Prompt,
+			sub.Schema,
+			configPath,
+			job.Args.BasePrompt,
+		)
+
+		ollamaDur := time.Since(ollamaStart)
+		ollamaTotal += ollamaDur
+
+		if err != nil {
+			log.Error().
+				Err(err).
+				Str("job_id", jobID).
+				Int("subtask", i).
+				Msg("Subtask failed")
+			return err
+		}
+
+		results[fmt.Sprintf("subtask_%d", i)] = response
+
+		log.Info().
+			Str("job_id", jobID).
+			Int("subtask", i).
+			Str("time_taken_by_ollama", humanizeDuration(ollamaDur)).
+			Msg("Subtask completed")
+	}
+
+	// ---- DB work ----
+	dbStart := time.Now()
+
+	jsonResponse, err := json.Marshal(results)
+	if err != nil {
+		return err
+	}
+
 	if err := w.insertResult(ctx, tx, job.ID, jsonResponse, groupID); err != nil {
 		return err
 	}
-	
 
-	_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to complete job transactionally")
+	if _, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job); err != nil {
 		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		log.Error().Err(err).Msg("Failed to commit transaction")
 		return err
 	}
 
+	dbTotal += time.Since(dbStart)
+
+	// ---- final summary ----
+	totalTime := time.Since(jobStart)
+
 	log.Info().
-		Str("job_id", strconv.FormatInt(job.ID, 10)).
-		Msg("Job completed and saved")
+		Str("job_id", jobID).
+		Int("subtasks", len(job.Args.SubTasks)).
+		Str("ollama_total", humanizeDuration(ollamaTotal)).
+		Str("db_total", humanizeDuration(dbTotal)).
+		Str("total_time", humanizeDuration(totalTime)).
+		Msg("Job completed")
+
 	return nil
 }
 
@@ -98,10 +159,16 @@ func RegisterWorkers(db *pgxpool.Pool) *river.Workers {
 	return workers
 }
 
-func createWorkerClient(driver *riverpgxv5.Driver, workers *river.Workers) (*river.Client[pgx.Tx], error) {
+func createWorkerClient(
+	driver *riverpgxv5.Driver,
+	workers *river.Workers,
+	concurrentWorkers int) (*river.Client[pgx.Tx], error) {
+	log.Info().
+		Int("concurrent_workers", concurrentWorkers).
+		Msg("Initializing River worker client")
 	return river.NewClient[pgx.Tx](driver, &river.Config{
 		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: 10},
+			river.QueueDefault: {MaxWorkers: concurrentWorkers},
 		},
 		Workers:                     workers,
 		CompletedJobRetentionPeriod: 72 * time.Hour,
@@ -109,8 +176,21 @@ func createWorkerClient(driver *riverpgxv5.Driver, workers *river.Workers) (*riv
 }
 
 func RunWorker(ctx context.Context, driver *riverpgxv5.Driver, cancel context.CancelFunc, db *pgxpool.Pool) {
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Unable to determine home directory")
+	}
+
+	configPath := homeDir + string(os.PathSeparator) + ".dprompts.toml"
+
+	workerConfig, err := LoadWorkerConfig(configPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to load worker config")
+	}
+
 	workers := RegisterWorkers(db)
-	riverClient, err := createWorkerClient(driver, workers)
+	riverClient, err := createWorkerClient(driver, workers, workerConfig.ConcurrentWorkers)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create River client")
 	}
@@ -166,10 +246,8 @@ func (w *DPromptsWorker) resolveGroup(ctx context.Context, tx pgx.Tx, jobID stri
 		}
 	}
 
-	log.Info().Str("job_id", jobID).Int("group_id", id).Msg("Resolved group")
 	return &id, nil
 }
-
 
 // insertResult inserts or updates a dprompt result for a job
 func (w *DPromptsWorker) insertResult(ctx context.Context, tx pgx.Tx, jobID int64, jsonResponse []byte, groupID *int) error {
@@ -189,5 +267,3 @@ func (w *DPromptsWorker) insertResult(ctx context.Context, tx pgx.Tx, jobID int6
 	}
 	return nil
 }
-
-

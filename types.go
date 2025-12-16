@@ -9,13 +9,17 @@ type DBConfig struct {
 	Port     string
 }
 
+type DPromptsSubTask struct {
+	Prompt   string                 `json:"prompt"`
+	Schema   interface{}            `json:"schema,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"` // <-- new
 
-type DPromptsJobArgs struct {
-    Prompt     string                 `json:"prompt"`
-    Schema     interface{}            `json:"schema,omitempty"`
-    GroupName string                 `json:"group_name,omitempty"` // optional
 }
 
+type DPromptsJobArgs struct {
+	SubTasks   []DPromptsSubTask `json:"sub_tasks"`
+	BasePrompt string            `json:"base_prompt,omitempty"`
+}
 
 type DPromptsJobResult struct {
 	Response string `json:"response"`
@@ -37,4 +41,8 @@ type OllamaResponse struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	} `json:"message"`
+}
+
+type WorkerConfig struct {
+	ConcurrentWorkers int `toml:"concurrent_workers"`
 }

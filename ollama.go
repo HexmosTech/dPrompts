@@ -3,16 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/rs/zerolog/log"
 )
-
-
 
 func LoadLLMConfig(configPath string) (*LLMConfig, error) {
 	var conf struct {
@@ -25,17 +22,25 @@ func LoadLLMConfig(configPath string) (*LLMConfig, error) {
 	return &conf.LLM, nil
 }
 
-func CallOllama(prompt string, schema interface{}, configPath string) (string, error) {
+func CallOllama(
+	prompt string,
+	schema interface{},
+	configPath string,
+	basePrompt string,
+) (string, error) {
+
+	// Load config
 	llmConfig, err := LoadLLMConfig(configPath)
 	if err != nil {
 		return "", err
 	}
 
-	// Build request body
-	req := map[string]interface{}{
+	// Build request
+	req := map[string]any{
 		"model":  llmConfig.Model,
 		"stream": false,
 		"messages": []map[string]string{
+			{"role": "system", "content": basePrompt},
 			{"role": "user", "content": prompt},
 		},
 		"options": map[string]float64{
@@ -44,11 +49,10 @@ func CallOllama(prompt string, schema interface{}, configPath string) (string, e
 		},
 	}
 
-	// ⬇️ Only include schema if provided
 	if schema != nil {
 		req["format"] = schema
 	} else {
-		req["format"] = "json" // default JSON output
+		req["format"] = "json"
 	}
 
 	reqBody, err := json.Marshal(req)
@@ -56,18 +60,23 @@ func CallOllama(prompt string, schema interface{}, configPath string) (string, e
 		return "", err
 	}
 
+	// HTTP call
 	client := &http.Client{Timeout: 360 * time.Second}
-	endpoint := llmConfig.APIEndpoint
-	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(reqBody))
+	resp, err := client.Post(
+		llmConfig.APIEndpoint,
+		"application/json",
+		bytes.NewReader(reqBody),
+	)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", errors.New("ollama API returned non-200 status: " + resp.Status)
+		return "", fmt.Errorf("ollama API returned %s", resp.Status)
 	}
 
+	// Read & decode response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
@@ -77,7 +86,6 @@ func CallOllama(prompt string, schema interface{}, configPath string) (string, e
 	if err := json.Unmarshal(body, &ollamaResp); err != nil {
 		return "", err
 	}
-	log.Info().Str("response", ollamaResp.Message.Content).Msg("Ollama response received")
 
 	return ollamaResp.Message.Content, nil
 }
