@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
@@ -101,8 +102,15 @@ func main() {
 	viewCmd.Flags().IntVar(&groupID, "group", 0, "Display results for a specific group ID")
 	viewCmd.Flags().IntVarP(&n, "number", "n", 10, "Number of results to display")
 
+
+
+
+
+
 	// ---- Delete-group subcommand ----
 	var deleteGroupID int
+	// ---- Delete-group subcommand ----
+
 	deleteGroupCmd := &cobra.Command{
 		Use:   "delete-group",
 		Short: "Delete a group and its results",
@@ -110,6 +118,12 @@ func main() {
 			if deleteGroupID == 0 {
 				log.Fatal().Msg("Please provide --group-id")
 			}
+
+			if !askForConfirmation(fmt.Sprintf("Are you sure you want to delete group %d and all its results?", deleteGroupID)) {
+				log.Info().Msg("Deletion cancelled by user")
+				return
+			}
+
 			ctx := context.Background()
 			dbPool, err := NewDBPool(ctx, configPath)
 			if err != nil {
@@ -124,12 +138,20 @@ func main() {
 	}
 	deleteGroupCmd.Flags().IntVar(&deleteGroupID, "group-id", 0, "Group ID to delete")
 
-	// ---- Queue subcommand ----
-	var queueAction string
+
+
+
+	// ---- Queue subcommands ----
 	var queueN int
+
 	queueCmd := &cobra.Command{
 		Use:   "queue",
 		Short: "Queue operations",
+	}
+
+	queueViewCmd := &cobra.Command{
+		Use:   "view",
+		Short: "View queued jobs",
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 			dbPool, err := NewDBPool(ctx, configPath)
@@ -137,44 +159,181 @@ func main() {
 				log.Fatal().Err(err).Msg("Failed to connect to database")
 			}
 			defer dbPool.Close()
-
-			switch queueAction {
-			case "view":
-				if err := ViewQueuedJobs(ctx, dbPool, queueN); err != nil {
-					log.Fatal().Err(err).Msg("Failed to view queued jobs")
-				}
-			case "clear":
-				if err := ClearQueuedJobs(ctx, dbPool); err != nil {
-					log.Fatal().Err(err).Msg("Failed to clear queued jobs")
-				}
-			case "count":
-				if err := CountQueuedJobs(ctx, dbPool); err != nil {
-					log.Fatal().Err(err).Msg("Failed to count queued jobs")
-				}
-			case "completed-count":
-				if err := CountCompletedJobs(ctx, dbPool); err != nil {
-					log.Fatal().Err(err).Msg("Failed to count completed jobs")
-				}
-			case "completed-first":
-				if err := ViewFirstCompletedJobs(ctx, dbPool, queueN); err != nil {
-					log.Fatal().Err(err).Msg("Failed to view first completed jobs")
-				}
-			case "completed-last":
-				if err := ViewLastCompletedJobs(ctx, dbPool, queueN); err != nil {
-					log.Fatal().Err(err).Msg("Failed to view last completed jobs")
-				}
-			default:
-				log.Fatal().Str("action", queueAction).Msg("Unknown queue action")
+			if err := ViewQueuedJobs(ctx, dbPool, queueN); err != nil {
+				log.Fatal().Err(err).Msg("Failed to view queued jobs")
 			}
 		},
 	}
-	queueCmd.Flags().StringVar(&queueAction, "action", "", "Queue action: view | clear | count | completed-count | completed-first | completed-last")
-	queueCmd.Flags().IntVar(&queueN, "queue-n", 10, "Number of jobs to display")
+	queueViewCmd.Flags().IntVarP(&queueN, "number", "n", 10, "Number of jobs to display")
 
+	queueCountCmd := &cobra.Command{
+		Use:   "count",
+		Short: "Count queued jobs",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.Background()
+			dbPool, err := NewDBPool(ctx, configPath)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to connect to database")
+			}
+			defer dbPool.Close()
+			if err := CountQueuedJobs(ctx, dbPool); err != nil {
+				log.Fatal().Err(err).Msg("Failed to count queued jobs")
+			}
+		},
+	}
+
+		// ---- Queue Clear subcommand ----
+	queueClearCmd := &cobra.Command{
+		Use:   "clear",
+		Short: "Clear queued jobs",
+		Run: func(cmd *cobra.Command, args []string) {
+			if !askForConfirmation("Are you sure you want to clear all queued jobs?") {
+				log.Info().Msg("Clearing queued jobs cancelled by user")
+				return
+			}
+
+			ctx := context.Background()
+			dbPool, err := NewDBPool(ctx, configPath)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to connect to database")
+			}
+			defer dbPool.Close()
+			if err := ClearQueuedJobs(ctx, dbPool); err != nil {
+				log.Fatal().Err(err).Msg("Failed to clear queued jobs")
+			}
+			log.Info().Msg("All queued jobs cleared")
+		},
+	}
+
+	queueFailedCmd := &cobra.Command{
+		Use:   "failed-attempts",
+		Short: "View jobs with failed attempts",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.Background()
+			dbPool, err := NewDBPool(ctx, configPath)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to connect to database")
+			}
+			defer dbPool.Close()
+			if err := ViewJobsWithFailedAttempts(ctx, dbPool, queueN); err != nil {
+				log.Fatal().Err(err).Msg("Failed to view jobs with failed attempts")
+			}
+		},
+	}
+	queueFailedCmd.Flags().IntVarP(&queueN, "number", "n", 10, "Number of jobs to display")
+
+	// Completed jobs subcommand
+	queueCompletedCmd := &cobra.Command{
+		Use:   "completed",
+		Short: "Completed job operations",
+	}
+
+	queueCompletedCountCmd := &cobra.Command{
+		Use:   "count",
+		Short: "Count completed jobs",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.Background()
+			dbPool, err := NewDBPool(ctx, configPath)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to connect to database")
+			}
+			defer dbPool.Close()
+			if err := CountCompletedJobs(ctx, dbPool); err != nil {
+				log.Fatal().Err(err).Msg("Failed to count completed jobs")
+			}
+		},
+	}
+
+	queueCompletedFirstCmd := &cobra.Command{
+		Use:   "first",
+		Short: "View first completed jobs",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.Background()
+			dbPool, err := NewDBPool(ctx, configPath)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to connect to database")
+			}
+			defer dbPool.Close()
+			if err := ViewFirstCompletedJobs(ctx, dbPool, queueN); err != nil {
+				log.Fatal().Err(err).Msg("Failed to view first completed jobs")
+			}
+		},
+	}
+	queueCompletedFirstCmd.Flags().IntVarP(&queueN, "number", "n", 10, "Number of jobs to display")
+
+	queueCompletedLastCmd := &cobra.Command{
+		Use:   "last",
+		Short: "View last completed jobs",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.Background()
+			dbPool, err := NewDBPool(ctx, configPath)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to connect to database")
+			}
+			defer dbPool.Close()
+			if err := ViewLastCompletedJobs(ctx, dbPool, queueN); err != nil {
+				log.Fatal().Err(err).Msg("Failed to view last completed jobs")
+			}
+		},
+	}
+	queueCompletedLastCmd.Flags().IntVarP(&queueN, "number", "n", 10, "Number of jobs to display")
+
+	// Wire completed commands
+	queueCompletedCmd.AddCommand(queueCompletedCountCmd, queueCompletedFirstCmd, queueCompletedLastCmd)
+
+	// Wire main queue commands
+	queueCmd.AddCommand(queueViewCmd, queueCountCmd, queueClearCmd, queueFailedCmd, queueCompletedCmd)
+
+
+
+		// ---- Export subcommand ----
+		var (
+			exportFormat  string
+			exportOutDir  string
+			exportFromDate string
+			exportDryRun bool
+			exportOverwrite bool
+		)
+	
+		exportCmd := &cobra.Command{
+			Use:   "export",
+			Short: "Export dprompts results to files",
+			Run: func(cmd *cobra.Command, args []string) {
+				ctx := context.Background()
+	
+				dbPool, err := NewDBPool(ctx, configPath)
+				if err != nil {
+					log.Fatal().Err(err).Msg("Failed to connect to database")
+				}
+				defer dbPool.Close()
+	
+				count, err := ExportResults(ctx, dbPool, ExportOptions{
+					Format:    exportFormat,
+					OutDir:    exportOutDir,
+					FromDate:  exportFromDate,
+					DryRun:    exportDryRun,
+					Overwrite: exportOverwrite,
+				})
+				if err != nil {
+					log.Fatal().Err(err).Msg("Export failed")
+				}
+	
+				log.Info().
+					Int("exported_count", count).
+					Msg("Export completed successfully")
+			},
+		}
+	
+	exportCmd.Flags().StringVar(&exportFormat, "format", "json", "Export format: json | txt")
+	exportCmd.Flags().StringVar(&exportOutDir, "out", "./dprompts_exports", "Output directory")
+	exportCmd.Flags().StringVar(&exportFromDate, "from-date", "", "Export results created after this date (YYYY-MM-DD)")
+	exportCmd.Flags().BoolVar(&exportDryRun, "dry-run", false, "Show what would be exported without writing files")
+	exportCmd.Flags().BoolVar(&exportOverwrite, "overwrite", false, "Overwrite existing exported files")
 	// Add subcommands
-	rootCmd.AddCommand(clientCmd, workerCmd, viewCmd, deleteGroupCmd, queueCmd)
+	rootCmd.AddCommand(clientCmd, workerCmd, viewCmd, deleteGroupCmd, queueCmd,exportCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal().Err(err).Msg("Command execution failed")
 	}
 }
+
