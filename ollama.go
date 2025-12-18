@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"runtime"
 	"time"
@@ -112,18 +111,41 @@ func isOllamaRunning() bool {
 
 func startOllama() error {
 	var cmd *exec.Cmd
+	var path string
+	var err error
 
-	// Works on Linux / macOS / Windows (if ollama is in PATH)
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("ollama", "serve")
+		fmt.Println("[INFO] Running on Windows. Looking for Ollama in PATH...")
+		path, err = exec.LookPath("ollama app")
+		if err != nil {
+			fmt.Println("[ERROR] Ollama not found in PATH. Make sure it is installed and accessible.")
+			return err
+		}
+		fmt.Printf("[INFO] Found Ollama executable at: %s\n", path)
+		cmd = exec.Command(path) // Launch tray/background server
 	} else {
-		cmd = exec.Command("ollama", "serve")
+		fmt.Println("[INFO] Running on Linux/macOS. Looking for Ollama in PATH...")
+		path, err = exec.LookPath("ollama")
+		if err != nil {
+			fmt.Println("[ERROR] Ollama not found in PATH. Make sure it is installed.")
+			return err
+		}
+		fmt.Printf("[INFO] Found Ollama executable at: %s\n", path)
+		cmd = exec.Command(path, "serve")
 	}
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	fmt.Printf("[INFO] Starting Ollama command: %v\n", cmd.Args)
 
-	return cmd.Start() // non-blocking
+
+
+	err = cmd.Start()
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to start Ollama: %v\n", err)
+		return err
+	}
+
+	fmt.Println("[INFO] Ollama started successfully (non-blocking).")
+	return nil
 }
 
 
