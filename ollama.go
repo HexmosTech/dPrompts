@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/BurntSushi/toml"
 )
 
@@ -109,45 +110,116 @@ func isOllamaRunning() bool {
 }
 
 
-func startOllama() error {
-	var cmd *exec.Cmd
-	var path string
-	var err error
 
-	if runtime.GOOS == "windows" {
-		fmt.Println("[INFO] Running on Windows. Looking for Ollama in PATH...")
-		path, err = exec.LookPath("ollama app")
-		if err != nil {
-			fmt.Println("[ERROR] Ollama not found in PATH. Make sure it is installed and accessible.")
-			return err
-		}
-		fmt.Printf("[INFO] Found Ollama executable at: %s\n", path)
-		cmd = exec.Command(path) // Launch tray/background server
-	} else {
-		fmt.Println("[INFO] Running on Linux/macOS. Looking for Ollama in PATH...")
-		path, err = exec.LookPath("ollama")
-		if err != nil {
-			fmt.Println("[ERROR] Ollama not found in PATH. Make sure it is installed.")
-			return err
-		}
-		fmt.Printf("[INFO] Found Ollama executable at: %s\n", path)
-		cmd = exec.Command(path, "serve")
+//
+// -------- Linux detection helpers --------
+//
+
+func hasSystemdOllama() bool {
+	cmd := exec.Command("systemctl", "list-unit-files", "ollama.service")
+	return cmd.Run() == nil
+}
+
+func hasSnapOllama() bool {
+	cmd := exec.Command("snap", "list", "ollama")
+	return cmd.Run() == nil
+}
+
+func hasOllamaBinary() bool {
+	_, err := exec.LookPath("ollama")
+	return err == nil
+}
+
+func askLinuxStartMethod() (string, error) {
+	options := []string{}
+
+	if hasSystemdOllama() {
+		options = append(options, "Start via systemd (recommended)")
+	}
+	if hasSnapOllama() {
+		options = append(options, "Start via snap")
+	}
+	if hasOllamaBinary() {
+		options = append(options, "Start manually (ollama serve)")
 	}
 
-	fmt.Printf("[INFO] Starting Ollama command: %v\n", cmd.Args)
+	options = append(options, "Do not start Ollama")
 
+	var choice string
+	prompt := &survey.Select{
+		Message: "Ollama is not running. How do you want to start it?",
+		Options: options,
+	}
 
+	err := survey.AskOne(prompt, &choice)
+	return choice, err
+}
 
-	err = cmd.Start()
+//
+// -------- Start Ollama --------
+//
+
+func startOllamaLinux() error {
+	choice, err := askLinuxStartMethod()
 	if err != nil {
-		fmt.Printf("[ERROR] Failed to start Ollama: %v\n", err)
 		return err
 	}
 
-	fmt.Println("[INFO] Ollama started successfully (non-blocking).")
-	return nil
+	switch choice {
+
+	case "Start via systemd (recommended)":
+		fmt.Println("[INFO] Starting Ollama via systemd...")
+		return exec.Command("sudo", "systemctl", "start", "ollama").Run()
+
+	case "Start via snap":
+		fmt.Println("[INFO] Starting Ollama via snap...")
+		return exec.Command("sudo", "snap", "start", "ollama").Run()
+
+	case "Start manually (ollama serve)":
+		fmt.Println("[INFO] Starting Ollama manually...")
+		cmd := exec.Command("ollama", "serve")
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		return cmd.Start()
+
+	default:
+		fmt.Println("[INFO] Ollama start skipped by user.")
+		return nil
+	}
 }
 
+func startOllamaWindows() error {
+	fmt.Println("[INFO] Running on Windows. Looking for Ollama in PATH...")
+	path, err := exec.LookPath("ollama app")
+	if err != nil {
+		fmt.Println("[ERROR] Ollama not found in PATH. Make sure it is installed.")
+		return err
+	}
+
+	fmt.Printf("[INFO] Found Ollama executable at: %s\n", path)
+	cmd := exec.Command(path) // Tray/background app
+	return cmd.Start()
+}
+
+func startOllama() error {
+	switch runtime.GOOS {
+	case "windows":
+		return startOllamaWindows()
+
+	case "linux":
+		return startOllamaLinux()
+
+	case "darwin": // macOS
+		fmt.Println("[INFO] Running on macOS. Starting Ollama manually...")
+		cmd := exec.Command("ollama", "serve")
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		return cmd.Start()
+
+	default:
+		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+	}
+}
 
 func waitForOllama(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
