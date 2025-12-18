@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/rs/zerolog"
@@ -57,17 +58,41 @@ func main() {
 		Use:   "worker",
 		Short: "Run the worker",
 		Run: func(cmd *cobra.Command, args []string) {
+	
+			if !isOllamaRunning() {
+				log.Warn().Msg("Ollama server is not running")
+	
+				if !askForConfirmation("Ollama is not running. Do you want me to start it for you?") {
+					log.Fatal().Msg("Ollama is required to run the worker")
+				}
+	
+				log.Info().Msg("Starting Ollama...")
+				if err := startOllama(); err != nil {
+					log.Fatal().Err(err).Msg("Failed to start Ollama")
+				}
+	
+				log.Info().Msg("Waiting for Ollama to become ready...")
+				if err := waitForOllama(15 * time.Second); err != nil {
+					log.Fatal().Err(err).Msg("Ollama did not become ready")
+				}
+	
+				log.Info().Msg("Ollama is running")
+			}
+	
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+	
 			dbPool, err := NewDBPool(ctx, configPath)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to connect to database")
 			}
 			defer dbPool.Close()
+	
 			driver := riverpgxv5.New(dbPool)
 			RunWorker(ctx, driver, cancel, dbPool)
 		},
 	}
+	
 
 	// ---- View subcommand ----
 	var totalGroups bool

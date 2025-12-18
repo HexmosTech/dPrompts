@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -88,4 +91,51 @@ func CallOllama(
 	}
 
 	return ollamaResp.Message.Content, nil
+}
+
+
+
+func isOllamaRunning() bool {
+	client := http.Client{
+		Timeout: 2 * time.Second,
+	}
+
+	resp, err := client.Get("http://localhost:11434/api/tags")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK
+}
+
+
+func startOllama() error {
+	var cmd *exec.Cmd
+
+	// Works on Linux / macOS / Windows (if ollama is in PATH)
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("ollama", "serve")
+	} else {
+		cmd = exec.Command("ollama", "serve")
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Start() // non-blocking
+}
+
+
+func waitForOllama(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		if isOllamaRunning() {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return fmt.Errorf("ollama did not start within %s", timeout)
 }
