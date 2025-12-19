@@ -311,49 +311,59 @@ func main() {
 
 
 
-		// ---- Export subcommand ----
-		var (
-			exportFormat  string
-			exportOutDir  string
-			exportFromDate string
-			exportDryRun bool
-			exportOverwrite bool
-		)
-	
-		exportCmd := &cobra.Command{
-			Use:   "export",
-			Short: "Export dprompts results to files",
-			Run: func(cmd *cobra.Command, args []string) {
-				ctx := context.Background()
-	
-				dbPool, err := NewDBPool(ctx, configPath)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to connect to database")
-				}
-				defer dbPool.Close()
-	
-				count, err := ExportResults(ctx, dbPool, ExportOptions{
-					Format:    exportFormat,
-					OutDir:    exportOutDir,
-					FromDate:  exportFromDate,
-					DryRun:    exportDryRun,
-					Overwrite: exportOverwrite,
-				})
-				if err != nil {
-					log.Fatal().Err(err).Msg("Export failed")
-				}
-	
-				log.Info().
-					Int("exported_count", count).
-					Msg("Export completed successfully")
-			},
-		}
+	// ---- Export subcommand ----
+	var (
+		exportFormat  string
+		exportOutDir  string
+		exportFromDate string
+		exportDryRun bool
+		exportOverwrite bool
+		exportFullExport bool
+	)
+
+	exportCmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export dprompts results to files",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.Background()
+
+			dbPool, err := NewDBPool(ctx, configPath)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to connect to database")
+			}
+			defer dbPool.Close()
+
+			count, err := ExportResults(ctx, dbPool, ExportOptions{
+				Format:     exportFormat,
+				OutDir:     exportOutDir,
+				FromDate:   exportFromDate,
+				FullExport: exportFullExport,
+				DryRun:     exportDryRun,
+				Overwrite:  exportOverwrite,
+			})
+			
+			if err != nil {
+				log.Fatal().Err(err).Msg("Export failed")
+			}
+
+			log.Info().
+				Int("exported_count", count).
+				Msg("Export completed successfully")
+		},
+	}
 	
 	exportCmd.Flags().StringVar(&exportFormat, "format", "json", "Export format: json | txt")
 	exportCmd.Flags().StringVar(&exportOutDir, "out", "./dprompts_exports", "Output directory")
 	exportCmd.Flags().StringVar(&exportFromDate, "from-date", "", "Export results created after this date (YYYY-MM-DD)")
 	exportCmd.Flags().BoolVar(&exportDryRun, "dry-run", false, "Show what would be exported without writing files")
 	exportCmd.Flags().BoolVar(&exportOverwrite, "overwrite", false, "Overwrite existing exported files")
+	exportCmd.Flags().BoolVar(
+		&exportFullExport,
+		"full-export",
+		false,
+		"Export all results (ignores --from-date)",
+	)
+	
 	// Add subcommands
 	rootCmd.AddCommand(clientCmd, workerCmd, viewCmd, deleteGroupCmd, queueCmd,exportCmd)
 

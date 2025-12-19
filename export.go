@@ -14,24 +14,34 @@ import (
 )
 
 type ExportOptions struct {
-	Format    string
-	OutDir    string
-	FromDate  string
-	DryRun    bool
-	Overwrite bool
+	Format     string
+	OutDir     string
+	FromDate   string
+	FullExport bool
+	DryRun     bool
+	Overwrite  bool
 }
 
+
 type ExportResult struct {
-	JobID     int64     `json:"job_id"`
-	Result    string    `json:"result"`
-	CreatedAt time.Time `json:"created_at"`
+	JobID     int64
+	Response  []byte
+	GroupName *string
+	CreatedAt time.Time
 }
+
+
 
 func ExportResults(
 	ctx context.Context,
 	dbPool *pgxpool.Pool,
 	opts ExportOptions,
 ) (int, error) {
+	if opts.FullExport && opts.FromDate != "" {
+		return 0, fmt.Errorf("--full-export cannot be used with --from-date")
+	}
+
+	start := time.Now()
 
 	// Ensure directory exists
 	if err := os.MkdirAll(opts.OutDir, 0755); err != nil {
@@ -51,99 +61,157 @@ func ExportResults(
 		existing = scanExistingExports(opts.OutDir, opts.Format)
 	}
 
-	// Determine fromTime
-	var fromTime time.Time
-	if opts.FromDate != "" {
-		t, err := time.Parse("2006-01-02", opts.FromDate)
-		if err != nil {
-			return 0, fmt.Errorf("invalid --from-date format (expected YYYY-MM-DD)")
-		}
-		fromTime = t
+	var (
+		query string
+		args  []any
+	)
+
+	if opts.FullExport {
+		fmt.Println("Mode: full-export (no date filter)")
+		query = `
+			SELECT
+				r.job_id,
+				r.response,
+				r.created_at,
+				g.group_name
+			FROM dprompts_results r
+			LEFT JOIN dprompt_groups g
+				ON r.group_id = g.id
+			ORDER BY r.created_at ASC
+		`
 	} else {
-		fromTime = time.Now().Add(-24 * time.Hour)
+		var fromTime time.Time
+
+		if opts.FromDate != "" {
+			fmt.Println("Mode: from-date", opts.FromDate)
+			t, err := time.Parse("2006-01-02", opts.FromDate)
+			if err != nil {
+				return 0, fmt.Errorf("invalid --from-date format (expected YYYY-MM-DD)")
+			}
+			fromTime = t
+		} else {
+			fmt.Println("Mode: last-24-hours")
+			fromTime = time.Now().Add(-24 * time.Hour)
+		}
+
+		query = `
+			SELECT
+				r.job_id,
+				r.response,
+				r.created_at,
+				g.group_name
+			FROM dprompts_results r
+			LEFT JOIN dprompt_groups g
+				ON r.group_id = g.id
+			WHERE r.created_at >= $1
+			ORDER BY r.created_at ASC
+		`
+		args = []any{fromTime}
 	}
 
-	query := `
-		SELECT job_id, response, created_at
-		FROM dprompts_results
-		WHERE created_at >= $1
-		ORDER BY created_at ASC
-	`
-	fmt.Println(fromTime)
-	rows, err := dbPool.Query(ctx, query, fromTime)
+	// ---- count total matching rows ----
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM (%s) q", query)
+	var totalMatched int
+	if err := dbPool.QueryRow(ctx, countQuery, args...).Scan(&totalMatched); err != nil {
+		return 0, err
+	}
+
+	skipped := len(existing)
+	toExport := totalMatched - skipped
+	if toExport < 0 {
+		toExport = 0
+	}
+
+	fmt.Println("Matched jobs in DB:", totalMatched)
+	fmt.Println("Already exported (skipped):", skipped)
+	fmt.Println("Jobs to export:", toExport)
+	fmt.Println()
+
+	rows, err := dbPool.Query(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
 
-	count := 0
+	exported := 0
 
 	for rows.Next() {
 		var r ExportResult
 		if err := rows.Scan(
 			&r.JobID,
-			&r.Result,
+			&r.Response,
 			&r.CreatedAt,
+			&r.GroupName,
 		); err != nil {
-			return count, err
+			return exported, err
 		}
 
-		// Skip already exported jobs
 		if _, ok := existing[r.JobID]; ok {
 			continue
 		}
 
+		exported++
+
+		if exported == 1 || exported%50 == 0 || exported == toExport {
+			fmt.Printf(
+				"Exporting %d/%d (job_id=%d)\n",
+				exported,
+				toExport,
+				r.JobID,
+			)
+		}
+
 		if !opts.DryRun {
 			if err := writeExportFile(opts, r); err != nil {
-				return count, err
+				return exported, err
 			}
 		}
-
-		count++
 	}
 
-	return count, rows.Err()
+	duration := time.Since(start)
+
+	fmt.Println()
+	fmt.Println("Export completed")
+	fmt.Println("Exported:", exported)
+	fmt.Println("Skipped:", skipped)
+	fmt.Println("Duration:", duration.Round(time.Millisecond))
+
+	return exported, rows.Err()
 }
+
 
 func writeExportFile(opts ExportOptions, r ExportResult) error {
-	filename := fmt.Sprintf("%d.%s", r.JobID, opts.Format)
+	filename := fmt.Sprintf("%d.json", r.JobID)
 	path := filepath.Join(opts.OutDir, filename)
 
-	switch opts.Format {
-	case "json":
-		var parsed any
-		if err := json.Unmarshal([]byte(r.Result), &parsed); err != nil {
-			return fmt.Errorf("invalid JSON in result for job %d: %w", r.JobID, err)
-		}
-	
-		normalized := normalizeJSON(parsed)
-	
-		out := map[string]any{
-			"job_id":     r.JobID,
-			"created_at": r.CreatedAt,
-			"result":     normalized,
-		}
-	
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return err
-		}
-	
-		return os.WriteFile(path, data, 0644)
+	var resultValue any
 
-	case "txt":
-		content := fmt.Sprintf(
-			"Job ID: %d\nCreated At: %s\n\nResult:\n%s\n",
-			r.JobID,
-			r.CreatedAt.Format(time.RFC3339),
-			r.Result,
-		)
-		return os.WriteFile(path, []byte(content), 0644)
-
-	default:
-		return fmt.Errorf("unsupported export format: %s", opts.Format)
+	// Try JSON first
+	var parsed any
+	if err := json.Unmarshal(r.Response, &parsed); err == nil {
+		resultValue = normalizeJSON(parsed)
+	} else {
+		// Not JSON → keep as text
+		resultValue = string(r.Response)
 	}
+
+	out := map[string]any{
+		"job_id":     r.JobID,
+		"created_at": r.CreatedAt,
+		"result":     resultValue,
+		"metadata": map[string]any{
+			"group_name": r.GroupName,
+		},
+	}
+
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
 }
+
 
 func scanExistingExports(dir, format string) map[int64]struct{} {
 	result := make(map[int64]struct{})
