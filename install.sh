@@ -64,7 +64,7 @@ if [ $IS_WINDOWS -eq 1 ]; then
     echo "  ollama serve"
     echo "  ollama pull $OLLAMA_MODEL"
     echo "== Installation complete! =="
-    echo "You can now use the '$BINARY_NAME_WIN --mode=worker' command to start the dPrompts worker."
+    echo "You can now use the '$BINARY_NAME_WIN worker' command to start the dPrompts worker."
     exit 0
 fi
 
@@ -109,4 +109,4 @@ else
 fi
 
 echo "== Installation complete! =="
-echo "You can now use the 'dpr --mode=worker' command to start the dPrompts worker."
+echo "You can now use the 'dpr worker' command to start the dPrompts worker."
