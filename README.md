@@ -22,94 +22,204 @@ dPrompts enables teams to perform distributed, bulk LLM operations locally using
 
 ## Usage
 
-### Run a Worker
+
+### Running a Worker
 
 ```sh
 make worker
 ```
+
 or
+
 ```sh
-dpr --mode=worker
+dpr worker
 ```
 
-### Enqueue a Job (Client Mode)
+### Enqueuing a Single Job (Client Mode)
 
 ```sh
 make client
 ```
+
 or manually:
+
 ```sh
-dpr --mode=client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type":"manpage","category":"science"}'
+dpr client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type":"manpage","category":"science"}'
 ```
 
-### Bulk Enqueue Jobs
+### Enqueuing Multiple Jobs (Bulk Mode)
 
 To enqueue multiple jobs at once from a JSON file:
 
 ```sh
-dpr --mode=client --bulk-from-file=queue_items.json
+dpr client --bulk-from-file=queue_items.json
 ```
 
-The JSON file should be an array of job objects:
+Each job in the JSON file should follow this structure:
 
 ```json
 [
   {
-    "args": {
-      "prompt": "Why is the sky blue?"
-    },
-    "metadata": {
-      "type": "test",
-      "category": "science"
-    }
+    "base_prompt": "<common prompt shared by all subtasks>",  // optional
+    "sub_tasks": [
+      {
+        "prompt": "<subtask-specific prompt>",  
+        "schema": { /* schema for this subtask */ },    // optional
+        "metadata": {
+          "subtask_name": "<subtask identifier>"
+        }                                            
+      },
+      {
+        "prompt": "<another subtask prompt>",
+        "schema": { /* schema */ },
+         "metadata": {
+          "subtask_name": "<subtask identifier>"
+        }  
+      }
+      /* more subtasks... */
+    ]
   },
   {
-    "args": {
-      "prompt": "What is the capital of France?"
-    },
-    "metadata": {
-      "type": "test",
-      "category": "geography"
-    }
+    "base_prompt": "<common prompt for another job>",       // optional
+    "sub_tasks": [
+      {
+        "prompt": "<subtask prompt>",
+        "schema": { /* schema */ } 
+        /* metadata can be omitted */
+      }
+      /* more subtasks... */
+    ]
   }
 ]
-```
-
-### View Last Results
-
-To view the last `n` results processed by the worker:
 
 ```
-dpr --mode=view --n=20
+
+- **`base_prompt`**: Optional prompt shared by all subtasks in the job. It is a common context that helps improve caching and execution speed when running multiple related subtasks together.
+    
+- **`sub_tasks`**: A list of subtasks. Each subtask can include:
+    - `prompt` a prompt specific to this subtask
+    - `schema` (optional) — schema defining expected output for this subtask
+    - `metadata` (optional) — extra information such as group name or subtask identifier
+
+### Queue Management Commands
+
+The `queue` command provides operations to inspect and manage jobs in dprompts, including viewing, counting, clearing, and inspecting failed or completed jobs.
+
+#### Usage
+
+```bash
+dpr queue [command] [flags]
 ```
 
+#### Available Subcommands
 
-### View Groups
+| Subcommand        | Description                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `view`            | View queued jobs. Use `-n` or `--number` to limit how many jobs to display.               |
+| `count`           | Count the total number of queued jobs.                                                    |
+| `clear`           | Clear all queued jobs. Prompts for confirmation before deleting.                          |
+| `failed-attempts` | View jobs that have failed attempts. Use `-n` or `--number` to limit the display.         |
+| `completed`       | Operations related to completed jobs, with further subcommands: `count`, `first`, `last`. |
 
-List all groups created in the system:
+#### Examples
 
-```
-dpr --mode=view --total-groups
-```
+View the last 10 queued jobs:
 
-### View results for a specific group by its ID
-
-```
-dpr --mode=view --group=1
-```
-
-### View Queued Jobs
-
-```
-dpr --mode=queue --action=view --queue-n=20
+```bash
+dpr queue view
 ```
 
-### Clear Queued Jobs
+Count the number of queued jobs:
 
-```
-dpr --mode=queue --action=clear
+```bash
+dpr queue count
 ```
 
+Clear all queued jobs (with confirmation):
+
+```bash
+dpr queue clear
+```
+
+View the first 5 completed jobs:
+
+```bash
+dpr queue completed first -n 5
+```
+
+Count completed jobs:
+
+```bash
+dpr queue completed count
+```
+
+View jobs with failed attempts (last 20):
+
+```bash
+dpr queue failed-attempts -n 20
+```
+
+### Viewing Results
+
+The `view` command allows you to inspect dprompts results.
+
+#### Usage
+
+```bash
+dpr view [flags]
+```
+
+#### Flags
+
+| Flag               | Description                                |
+| ------------------ | ------------------------------------------ |
+| `-h, --help`       | Show help for the `view` command           |
+| `-n, --number int` | Number of results to display (default: 10) |
+
+### Exporting Results
+
+The `export` command allows you to export dprompts results to files. You can control the output directory, format, and which results to include.
+
+#### Usage
+
+```bash
+dpr export [flags]
+```
+
+| Flag                 | Description                                                   | Default              |
+| -------------------- | ------------------------------------------------------------- | -------------------- |
+| `--dry-run`          | Show what would be exported without actually writing files    | `false`              |
+| `--from-date string` | Export results created after this date (format: `YYYY-MM-DD`) | `1 day before`       |
+| `--full-export`      | Export all results, ignores `--from-date`                     | `false`              |
+| `--out string`       | Directory to save exported files                              | `./dprompts_exports` |
+| `--overwrite`        | Overwrite existing exported files in the output directory     | `false`              |
+| `-h, --help`         | Show help for the export command                              | -                    |
+
+#### Examples
+
+Export results created after `2025-12-01`:
+
+```bash
+dpr export --from-date 2025-12-01
+```
+
+Export all results, ignoring date:
+
+```bash
+dpr export --full-export
+```
+
+Dry-run to see what would be exported:
+
+```bash
+dpr export --dry-run
+```
+
+Export to a custom folder and overwrite existing files:
+
+```bash
+dpr export --out ./my_exports --overwrite
+```
 
 
 
@@ -157,6 +267,3 @@ dpr --mode=queue --action=clear
 - The worker will process jobs and store results in the configured PostgreSQL database.
 - **PostgreSQL Storage Details:**
   - `dprompt_results` — stores the results of processed jobs.
-  - `dprompt_groups` — stores job groups with unique `group_name` and `id`.
-    - Groups are a way to organize related jobs that work toward the same goal.
-    - This makes it easy to view or analyze all jobs related to a single goal together.
