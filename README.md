@@ -35,6 +35,8 @@ or
 dpr worker
 ```
 
+---
+
 ### Enqueuing a Single Job (Client Mode)
 
 ```sh
@@ -46,6 +48,9 @@ or manually:
 ```sh
 dpr client --args='{"prompt":"Why is the sky blue?"}' --metadata='{"type":"manpage","category":"science"}'
 ```
+
+---
+
 
 ### Enqueuing Multiple Jobs (Bulk Mode)
 
@@ -100,6 +105,9 @@ Each job in the JSON file should follow this structure:
     - `prompt` a prompt specific to this subtask
     - `schema` (optional) — schema defining expected output for this subtask
     - `metadata` (optional) — extra information such as group name or subtask identifier
+
+
+--- 
 
 ### Queue Management Commands
 
@@ -159,6 +167,9 @@ View jobs with failed attempts (last 20):
 dpr queue failed-attempts -n 20
 ```
 
+---
+
+
 ### Viewing Results
 
 The `view` command allows you to inspect dprompts results.
@@ -175,6 +186,9 @@ dpr view [flags]
 | ------------------ | ------------------------------------------ |
 | `-h, --help`       | Show help for the `view` command           |
 | `-n, --number int` | Number of results to display (default: 10) |
+
+
+---
 
 ### Exporting Results
 
@@ -221,7 +235,7 @@ Export to a custom folder and overwrite existing files:
 dpr export --out ./my_exports --overwrite
 ```
 
-
+---
 
 
 ## Useful Ollama Commands
