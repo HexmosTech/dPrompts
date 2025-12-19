@@ -159,7 +159,6 @@ func ViewLastCompletedJobs(ctx context.Context, db *pgxpool.Pool, n int) error {
 	return rows.Err()
 }
 
-
 func ViewJobsWithFailedAttempts(
 	ctx context.Context,
 	dbPool *pgxpool.Pool,
@@ -214,14 +213,14 @@ func ViewJobsWithFailedAttempts(
 
 	for rows.Next() {
 		var (
-			id           int64
-			state        string
-			attempt      int
-			maxAttempts  int
-			kind         string
-			createdAt    time.Time
-			attemptedAt  *time.Time
-			scheduledAt  *time.Time
+			id          int64
+			state       string
+			attempt     int
+			maxAttempts int
+			kind        string
+			createdAt   time.Time
+			attemptedAt *time.Time
+			scheduledAt *time.Time
 		)
 
 		if err := rows.Scan(
@@ -266,4 +265,3 @@ func ViewJobsWithFailedAttempts(
 
 	return rows.Err()
 }
-

@@ -58,41 +58,40 @@ func main() {
 		Use:   "worker",
 		Short: "Run the worker",
 		Run: func(cmd *cobra.Command, args []string) {
-	
+
 			if !isOllamaRunning() {
 				log.Warn().Msg("Ollama server is not running")
-	
+
 				if !askForConfirmation("Ollama is not running. Do you want me to start it for you?") {
 					log.Fatal().Msg("Ollama is required to run the worker")
 				}
-	
+
 				log.Info().Msg("Starting Ollama...")
 				if err := startOllama(); err != nil {
 					log.Fatal().Err(err).Msg("Failed to start Ollama")
 				}
-	
+
 				log.Info().Msg("Waiting for Ollama to become ready...")
 				if err := waitForOllama(15 * time.Second); err != nil {
 					log.Fatal().Err(err).Msg("Ollama did not become ready")
 				}
-	
+
 				log.Info().Msg("Ollama is running")
 			}
-	
+
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-	
+
 			dbPool, err := NewDBPool(ctx, configPath)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to connect to database")
 			}
 			defer dbPool.Close()
-	
+
 			driver := riverpgxv5.New(dbPool)
 			RunWorker(ctx, driver, cancel, dbPool)
 		},
 	}
-	
 
 	// ---- View subcommand ----
 	var totalGroups bool
@@ -127,11 +126,6 @@ func main() {
 	viewCmd.Flags().IntVar(&groupID, "group", 0, "Display results for a specific group ID")
 	viewCmd.Flags().IntVarP(&n, "number", "n", 10, "Number of results to display")
 
-
-
-
-
-
 	// ---- Delete-group subcommand ----
 	var deleteGroupID int
 	// ---- Delete-group subcommand ----
@@ -162,9 +156,6 @@ func main() {
 		},
 	}
 	deleteGroupCmd.Flags().IntVar(&deleteGroupID, "group-id", 0, "Group ID to delete")
-
-
-
 
 	// ---- Queue subcommands ----
 	var queueN int
@@ -207,7 +198,6 @@ func main() {
 		},
 	}
 
-		// ---- Queue Clear subcommand ----
 	queueClearCmd := &cobra.Command{
 		Use:   "clear",
 		Short: "Clear queued jobs",
@@ -285,7 +275,6 @@ func main() {
 		},
 	}
 	queueCompletedFirstCmd.Flags().IntVarP(&queueN, "number", "n", 10, "Number of jobs to display")
-
 	queueCompletedLastCmd := &cobra.Command{
 		Use:   "last",
 		Short: "View last completed jobs",
@@ -302,22 +291,16 @@ func main() {
 		},
 	}
 	queueCompletedLastCmd.Flags().IntVarP(&queueN, "number", "n", 10, "Number of jobs to display")
-
-	// Wire completed commands
 	queueCompletedCmd.AddCommand(queueCompletedCountCmd, queueCompletedFirstCmd, queueCompletedLastCmd)
-
-	// Wire main queue commands
 	queueCmd.AddCommand(queueViewCmd, queueCountCmd, queueClearCmd, queueFailedCmd, queueCompletedCmd)
-
-
 
 	// ---- Export subcommand ----
 	var (
-		exportFormat  string
-		exportOutDir  string
-		exportFromDate string
-		exportDryRun bool
-		exportOverwrite bool
+		exportFormat     string
+		exportOutDir     string
+		exportFromDate   string
+		exportDryRun     bool
+		exportOverwrite  bool
 		exportFullExport bool
 	)
 
@@ -341,7 +324,7 @@ func main() {
 				DryRun:     exportDryRun,
 				Overwrite:  exportOverwrite,
 			})
-			
+
 			if err != nil {
 				log.Fatal().Err(err).Msg("Export failed")
 			}
@@ -351,7 +334,7 @@ func main() {
 				Msg("Export completed successfully")
 		},
 	}
-	
+
 	exportCmd.Flags().StringVar(&exportFormat, "format", "json", "Export format: json | txt")
 	exportCmd.Flags().StringVar(&exportOutDir, "out", "./dprompts_exports", "Output directory")
 	exportCmd.Flags().StringVar(&exportFromDate, "from-date", "", "Export results created after this date (YYYY-MM-DD)")
@@ -363,12 +346,11 @@ func main() {
 		false,
 		"Export all results (ignores --from-date)",
 	)
-	
+
 	// Add subcommands
-	rootCmd.AddCommand(clientCmd, workerCmd, viewCmd, deleteGroupCmd, queueCmd,exportCmd)
+	rootCmd.AddCommand(clientCmd, workerCmd, viewCmd, deleteGroupCmd, queueCmd, exportCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal().Err(err).Msg("Command execution failed")
 	}
 }
-

@@ -93,8 +93,6 @@ func CallOllama(
 	return ollamaResp.Message.Content, nil
 }
 
-
-
 func isOllamaRunning() bool {
 	client := http.Client{
 		Timeout: 2 * time.Second,
@@ -108,12 +106,6 @@ func isOllamaRunning() bool {
 
 	return resp.StatusCode == http.StatusOK
 }
-
-
-
-//
-// -------- Linux detection helpers --------
-//
 
 func hasSystemdOllama() bool {
 	cmd := exec.Command("systemctl", "list-unit-files", "ollama.service")
@@ -154,10 +146,6 @@ func askLinuxStartMethod() (string, error) {
 	err := survey.AskOne(prompt, &choice)
 	return choice, err
 }
-
-//
-// -------- Start Ollama --------
-//
 
 func startOllamaLinux() error {
 	choice, err := askLinuxStartMethod()

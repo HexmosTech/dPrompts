@@ -22,15 +22,12 @@ type ExportOptions struct {
 	Overwrite  bool
 }
 
-
 type ExportResult struct {
 	JobID     int64
 	Response  []byte
 	GroupName *string
 	CreatedAt time.Time
 }
-
-
 
 func ExportResults(
 	ctx context.Context,
@@ -179,7 +176,6 @@ func ExportResults(
 	return exported, rows.Err()
 }
 
-
 func writeExportFile(opts ExportOptions, r ExportResult) error {
 	filename := fmt.Sprintf("%d.json", r.JobID)
 	path := filepath.Join(opts.OutDir, filename)
@@ -211,7 +207,6 @@ func writeExportFile(opts ExportOptions, r ExportResult) error {
 
 	return os.WriteFile(path, data, 0644)
 }
-
 
 func scanExistingExports(dir, format string) map[int64]struct{} {
 	result := make(map[int64]struct{})
