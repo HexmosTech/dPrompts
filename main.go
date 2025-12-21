@@ -122,8 +122,8 @@ func main() {
 			}
 		},
 	}
-	viewCmd.Flags().BoolVar(&totalGroups, "total-groups", false, "Display total number of groups")
-	viewCmd.Flags().IntVar(&groupID, "group", 0, "Display results for a specific group ID")
+	// viewCmd.Flags().BoolVar(&totalGroups, "total-groups", false, "Display total number of groups")
+	// viewCmd.Flags().IntVar(&groupID, "group", 0, "Display results for a specific group ID")
 	viewCmd.Flags().IntVarP(&n, "number", "n", 10, "Number of results to display")
 
 	// ---- Delete-group subcommand ----
@@ -348,7 +348,7 @@ func main() {
 	)
 
 	// Add subcommands
-	rootCmd.AddCommand(clientCmd, workerCmd, viewCmd, deleteGroupCmd, queueCmd, exportCmd)
+	rootCmd.AddCommand(clientCmd, workerCmd, viewCmd, queueCmd, exportCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal().Err(err).Msg("Command execution failed")
