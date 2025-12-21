@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/BurntSushi/toml"
+	"github.com/santhosh-tekuri/jsonschema/v5"
 	"io"
 	"net/http"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
-	"github.com/AlecAivazis/survey/v2"
-	"github.com/BurntSushi/toml"
-	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 func LoadLLMConfig(configPath string) (*LLMConfig, error) {
@@ -42,7 +42,7 @@ func CallOllama(
 	// Build request
 	req := map[string]any{
 		"model":  llmConfig.Model,
-		"stream": true, 
+		"stream": true,
 		"messages": []map[string]string{
 			{"role": "system", "content": basePrompt},
 			{"role": "user", "content": prompt},
@@ -95,7 +95,6 @@ func CallOllama(
 
 		fullContent.WriteString(chunk.Message.Content)
 	}
-
 
 	output := fullContent.String()
 
@@ -238,9 +237,6 @@ func waitForOllama(timeout time.Duration) error {
 	return fmt.Errorf("ollama did not start within %s", timeout)
 }
 
-
-
-
 func validateJSONAgainstSchema(output string, schema any) error {
 	if schema == nil {
 		return nil
@@ -272,5 +268,3 @@ func validateJSONAgainstSchema(output string, schema any) error {
 
 	return nil
 }
-
-
