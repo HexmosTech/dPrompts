@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
-
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/BurntSushi/toml"
+	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 func LoadLLMConfig(configPath string) (*LLMConfig, error) {
@@ -41,7 +42,7 @@ func CallOllama(
 	// Build request
 	req := map[string]any{
 		"model":  llmConfig.Model,
-		"stream": false,
+		"stream": true, // prevent context deadline exceeded
 		"messages": []map[string]string{
 			{"role": "system", "content": basePrompt},
 			{"role": "user", "content": prompt},
@@ -79,18 +80,33 @@ func CallOllama(
 		return "", fmt.Errorf("ollama API returned %s", resp.Status)
 	}
 
-	// Read & decode response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	// Decode streamed JSON objects one by one
+	decoder := json.NewDecoder(resp.Body)
+
+	var fullContent strings.Builder
+	for {
+		var chunk OllamaResponse
+		if err := decoder.Decode(&chunk); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", err
+		}
+
+		fullContent.WriteString(chunk.Message.Content)
 	}
 
-	var ollamaResp OllamaResponse
-	if err := json.Unmarshal(body, &ollamaResp); err != nil {
-		return "", err
+
+	output := fullContent.String()
+
+	// schema validation (fail job if invalid)
+	if schema != nil {
+		if err := validateJSONAgainstSchema(output, schema); err != nil {
+			return "", err
+		}
 	}
 
-	return ollamaResp.Message.Content, nil
+	return output, nil
 }
 
 func isOllamaRunning() bool {
@@ -221,3 +237,40 @@ func waitForOllama(timeout time.Duration) error {
 
 	return fmt.Errorf("ollama did not start within %s", timeout)
 }
+
+
+
+
+func validateJSONAgainstSchema(output string, schema any) error {
+	if schema == nil {
+		return nil
+	}
+
+	schemaBytes, err := json.Marshal(schema)
+	if err != nil {
+		return fmt.Errorf("failed to marshal schema: %w", err)
+	}
+
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", bytes.NewReader(schemaBytes)); err != nil {
+		return fmt.Errorf("failed to add schema: %w", err)
+	}
+
+	compiledSchema, err := compiler.Compile("schema.json")
+	if err != nil {
+		return fmt.Errorf("failed to compile schema: %w", err)
+	}
+
+	var instance any
+	if err := json.Unmarshal([]byte(output), &instance); err != nil {
+		return fmt.Errorf("output is not valid JSON: %w", err)
+	}
+
+	if err := compiledSchema.Validate(instance); err != nil {
+		return fmt.Errorf("schema validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
