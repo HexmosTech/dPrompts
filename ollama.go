@@ -42,7 +42,7 @@ func CallOllama(
 	// Build request
 	req := map[string]any{
 		"model":  llmConfig.Model,
-		"stream": true, // prevent context deadline exceeded
+		"stream": true, 
 		"messages": []map[string]string{
 			{"role": "system", "content": basePrompt},
 			{"role": "user", "content": prompt},
